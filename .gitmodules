@@ -1,0 +1,3 @@
+[submodule "knowledge-graph-plugin"]
+	path = knowledge-graph-plugin
+	url = https://github.com/mironmax/knowledge-graph-plugin.git

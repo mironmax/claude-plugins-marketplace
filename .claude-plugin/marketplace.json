@@ -11,10 +11,7 @@
     {
       "name": "knowledge-graph",
       "description": "Extract and remember patterns, insights, and relationships across sessions. Fast in-memory MCP server with git-style sync.",
-      "source": {
-        "source": "github",
-        "repo": "mironmax/knowledge-graph-plugin"
-      },
+      "source": "./knowledge-graph-plugin",
       "version": "1.0.0"
     }
   ]
