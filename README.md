@@ -30,7 +30,20 @@ Extract and remember patterns, insights, and relationships worth preserving acro
 /plugin install knowledge-graph@maxim-plugins
 ```
 
-### 3. Restart Claude Code
+### 3. Run Plugin Setup
+
+After installation, each plugin requires its setup script to be run:
+
+```bash
+# For knowledge-graph plugin:
+~/DevProj/knowledge-graph-plugin/scripts/install.sh
+
+# Then follow the prompts to configure the MCP server
+```
+
+**Note:** Plugin install clones the repository but doesn't run setup automatically for security reasons.
+
+### 4. Restart Claude Code
 
 The plugin will be available after restart.
 
