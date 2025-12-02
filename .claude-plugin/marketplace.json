@@ -1,7 +1,12 @@
 {
   "name": "maxim-plugins",
-  "description": "Maxim's collection of Claude Code plugins",
-  "owner": "mironmax",
+  "owner": {
+    "name": "mironmax"
+  },
+  "metadata": {
+    "description": "Maxim's collection of Claude Code plugins",
+    "version": "1.0.0"
+  },
   "plugins": [
     {
       "name": "knowledge-graph",
