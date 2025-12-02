@@ -1,0 +1,13 @@
+{
+  "name": "knowledge-graph",
+  "version": "1.0.0",
+  "description": "Extract and remember patterns, insights, and relationships worth preserving across sessions. Fast in-memory MCP server with sub-millisecond operations.",
+  "author": {
+    "name": "Maxim"
+  },
+  "license": "MIT",
+  "keywords": ["knowledge", "graph", "memory", "documentation", "mcp"],
+  "commands": ["commands/"],
+  "skills": ["skills/"],
+  "mcpServers": [".mcp.json"]
+}
