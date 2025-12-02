@@ -7,7 +7,7 @@
   },
   "license": "MIT",
   "keywords": ["knowledge", "graph", "memory", "documentation", "mcp"],
-  "commands": ["commands/"],
-  "skills": ["skills/"],
-  "mcpServers": [".mcp.json"]
+  "commands": ["./commands/kg-sync.md"],
+  "skills": ["./skills/knowledge-graph"],
+  "mcpServers": ["./.mcp.json"]
 }
