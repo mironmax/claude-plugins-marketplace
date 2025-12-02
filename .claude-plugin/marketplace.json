@@ -1,0 +1,12 @@
+{
+  "name": "maxim-plugins",
+  "description": "Maxim's collection of Claude Code plugins",
+  "plugins": [
+    {
+      "name": "knowledge-graph",
+      "description": "Extract and remember patterns, insights, and relationships across sessions. Fast in-memory MCP server with git-style sync.",
+      "source": "https://github.com/mironmax/knowledge-graph-plugin.git",
+      "version": "1.0.0"
+    }
+  ]
+}
