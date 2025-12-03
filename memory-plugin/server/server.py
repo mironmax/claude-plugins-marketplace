@@ -8,7 +8,6 @@ Supports session tracking for diff-based sync.
 
 import asyncio
 import json
-import math
 import os
 import sys
 import logging
@@ -43,6 +42,9 @@ class KnowledgeGraphStore:
     # Session TTL: 24 hours (in seconds)
     SESSION_TTL = 24 * 60 * 60
 
+    # Grace period: nodes updated within this period are protected from archiving
+    GRACE_PERIOD_DAYS = 7
+
     # Compaction configuration (overridable via env vars)
     KG_MAX_TOKENS = int(os.getenv("KG_MAX_TOKENS", "5000"))
     KG_ORPHAN_GRACE_DAYS = int(os.getenv("KG_ORPHAN_GRACE_DAYS", "7"))
@@ -52,20 +54,12 @@ class KnowledgeGraphStore:
         self.project_path = project_path
         self.save_interval = save_interval
 
-        # In-memory graphs (what LLM sees)
+        # In-memory graphs (dict-based for O(1) operations)
+        # nodes: {node_id: node_dict}
+        # edges: {(from, to, rel): edge_dict}
         self.graphs = {
-            "user": {"nodes": [], "edges": []},
-            "project": {"nodes": [], "edges": []}
-        }
-
-        # Indexes for O(1) lookups
-        self._node_index = {
-            "user": {},    # node_id -> list index
-            "project": {}
-        }
-        self._edge_index = {
-            "user": {},    # (from, to, rel) tuple -> list index
-            "project": {}
+            "user": {"nodes": {}, "edges": {}},
+            "project": {"nodes": {}, "edges": {}}
         }
 
         # Version tracking (server-internal, never sent to LLM)
@@ -76,11 +70,7 @@ class KnowledgeGraphStore:
         }
 
         # Session tracking
-        self._sessions = {}  # session_id -> {"start_ts": timestamp, "level": "user"|"project"|"both"}
-
-        # Compaction state
-        self._startup_ts = time.time()
-        self._estimated_tokens = {"user": 0, "project": 0}
+        self._sessions = {}  # session_id -> {"start_ts": timestamp}
 
         # Thread safety
         self.lock = threading.RLock()
@@ -96,6 +86,16 @@ class KnowledgeGraphStore:
 
         logger.info(f"Knowledge graph initialized: user={user_path}, project={project_path}")
 
+    def _edge_key(self, from_ref: str, to_ref: str, rel: str) -> str:
+        """Generate string key for edge storage on disk."""
+        return f"{from_ref}->{to_ref}:{rel}"
+
+    def _parse_edge_key(self, key: str) -> tuple[str, str, str]:
+        """Parse edge key back to (from, to, rel)."""
+        arrow_idx = key.index("->")
+        colon_idx = key.rindex(":")
+        return key[:arrow_idx], key[arrow_idx + 2:colon_idx], key[colon_idx + 1:]
+
     def _load_all(self):
         """Load graphs from disk."""
         for level, path in [("user", self.user_path), ("project", self.project_path)]:
@@ -104,49 +104,45 @@ class KnowledgeGraphStore:
                     with open(path) as f:
                         data = json.load(f)
 
-                    # Separate graph data from metadata
+                    # Extract metadata
                     if "_meta" in data:
                         self._versions[level] = data["_meta"].get("versions", {})
-                        del data["_meta"]
 
-                    self.graphs[level] = data
+                    # Load nodes (already dict format)
+                    self.graphs[level]["nodes"] = {
+                        k: v for k, v in data.get("nodes", {}).items()
+                        if k != "_meta"
+                    }
+
+                    # Load edges (convert string keys to tuple keys internally)
+                    edges_data = data.get("edges", {})
+                    self.graphs[level]["edges"] = {}
+                    for key, edge in edges_data.items():
+                        tuple_key = (edge["from"], edge["to"], edge["rel"])
+                        self.graphs[level]["edges"][tuple_key] = edge
+
                     logger.info(f"Loaded {level} graph: {len(self.graphs[level]['nodes'])} nodes, {len(self.graphs[level]['edges'])} edges")
                 except Exception as e:
                     logger.error(f"Failed to load {level} graph: {e}")
 
-        # Rebuild indexes after loading
-        self._rebuild_indexes()
-
-        # Initialize token estimates
-        for level in ["user", "project"]:
-            self._estimated_tokens[level] = self._estimate_tokens_full(level)
-
-    def _rebuild_indexes(self):
-        """Rebuild node and edge indexes for fast lookups."""
-        for level in ["user", "project"]:
-            # Rebuild node index
-            self._node_index[level] = {
-                node["id"]: i
-                for i, node in enumerate(self.graphs[level]["nodes"])
-            }
-            # Rebuild edge index
-            self._edge_index[level] = {
-                (edge["from"], edge["to"], edge["rel"]): i
-                for i, edge in enumerate(self.graphs[level]["edges"])
-            }
-
     def _save_to_disk(self, level: str):
-        """Save graph to disk with metadata."""
+        """Save graph to disk."""
         path = self.user_path if level == "user" else self.project_path
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Combine graph with metadata for persistence
+
+            # Convert edges from tuple keys to string keys for JSON
+            edges_for_disk = {
+                self._edge_key(e["from"], e["to"], e["rel"]): e
+                for e in self.graphs[level]["edges"].values()
+            }
+
             data = {
-                **self.graphs[level],
+                "nodes": self.graphs[level]["nodes"],
+                "edges": edges_for_disk,
                 "_meta": {"versions": self._versions[level]}
             }
-            
+
             with open(path, 'w') as f:
                 json.dump(data, f, indent=2)
             logger.debug(f"Saved {level} graph to disk")
@@ -160,64 +156,81 @@ class KnowledgeGraphStore:
         return 20 + len(node.get("gist", "")) // 4 + \
                sum(len(n) // 4 for n in node.get("notes", []))
 
-    def _estimate_tokens_full(self, level: str) -> int:
-        """Full calculation. Only active nodes count."""
-        active = [n for n in self.graphs[level]["nodes"] if not n.get("_archived")]
-        return sum(self._node_token_cost(n) for n in active) + \
-               len(self.graphs[level]["edges"]) * 15  # ~15 tokens per edge
+    def _estimate_tokens(self, level: str) -> int:
+        """Calculate token estimate for a level. Only active nodes count."""
+        nodes = self.graphs[level]["nodes"]
+        edges = self.graphs[level]["edges"]
+
+        active_tokens = sum(
+            self._node_token_cost(n)
+            for n in nodes.values()
+            if not n.get("_archived")
+        )
+        edge_tokens = len(edges) * 15  # ~15 tokens per edge
+
+        return active_tokens + edge_tokens
 
     def _score_nodes(self, level: str) -> dict[str, float]:
         """
-        Higher score = more valuable = keep longer.
+        Percentile-based scoring. Higher score = more valuable = keep longer.
 
-        Factors (multiply together):
-        - Recency: Exponential decay, half-life 7 days: 2^(-age_days/7)
-        - Connectedness: Log scale: 1 + log(1 + edge_count + len(touches))
-        - Richness: Content investment: 1 + log(1 + len(gist) + sum(len(notes)))
+        Nodes within 7-day grace period are excluded (not returned).
+        Remaining nodes scored by percentile rank in three dimensions:
+        - Recency (last update timestamp)
+        - Connectedness (edge count + touches)
+        - Richness (gist length + notes length)
 
-        Exclusion: Skip nodes where version.ts > self._startup_ts (session protection)
+        Final score = recency_pct × connectedness_pct × richness_pct
         """
-        scores = {}
         current_time = time.time()
+        grace_period_seconds = self.GRACE_PERIOD_DAYS * 24 * 60 * 60
 
         # Count edges per node
         edge_count = {}
-        for edge in self.graphs[level]["edges"]:
+        for edge in self.graphs[level]["edges"].values():
             edge_count[edge["from"]] = edge_count.get(edge["from"], 0) + 1
             edge_count[edge["to"]] = edge_count.get(edge["to"], 0) + 1
 
-        for node in self.graphs[level]["nodes"]:
-            # Skip archived nodes
+        # Collect eligible nodes (past grace period)
+        eligible = []
+        for node_id, node in self.graphs[level]["nodes"].items():
             if node.get("_archived"):
                 continue
 
-            node_id = node["id"]
-
-            # Session protection: skip nodes created/modified this session
             version_key = self._version_key_node(node_id)
             version = self._versions[level].get(version_key, {})
-            if version.get("ts", 0) > self._startup_ts:
+            last_update = version.get("ts", current_time)
+            age_seconds = current_time - last_update
+
+            # Grace period: skip nodes updated within last 7 days
+            if age_seconds < grace_period_seconds:
                 continue
 
-            # Calculate age in days
-            age_seconds = current_time - version.get("ts", current_time)
-            age_days = age_seconds / (24 * 60 * 60)
+            eligible.append({
+                "id": node_id,
+                "recency_raw": -age_seconds,  # Negative so higher = fresher
+                "connectedness_raw": edge_count.get(node_id, 0) + len(node.get("touches", [])),
+                "richness_raw": len(node.get("gist", "")) + sum(len(n) for n in node.get("notes", []))
+            })
 
-            # Recency score (exponential decay, half-life 7 days)
-            recency = 2 ** (-age_days / 7)
+        if not eligible:
+            return {}
 
-            # Connectedness score
-            edges = edge_count.get(node_id, 0)
-            touches = len(node.get("touches", []))
-            connectedness = 1 + math.log(1 + edges + touches)
+        # Percentile ranking helper
+        def assign_percentiles(items: list, raw_key: str, pct_key: str):
+            sorted_items = sorted(items, key=lambda x: x[raw_key])
+            n = len(sorted_items)
+            for i, item in enumerate(sorted_items):
+                item[pct_key] = i / (n - 1) if n > 1 else 0.5
 
-            # Richness score (content investment)
-            gist_len = len(node.get("gist", ""))
-            notes_len = sum(len(n) for n in node.get("notes", []))
-            richness = 1 + math.log(1 + gist_len + notes_len)
+        assign_percentiles(eligible, "recency_raw", "recency_pct")
+        assign_percentiles(eligible, "connectedness_raw", "connectedness_pct")
+        assign_percentiles(eligible, "richness_raw", "richness_pct")
 
-            # Final score (multiply factors)
-            scores[node_id] = recency * connectedness * richness
+        # Final score = product of percentiles
+        scores = {}
+        for item in eligible:
+            scores[item["id"]] = item["recency_pct"] * item["connectedness_pct"] * item["richness_pct"]
 
         return scores
 
@@ -226,16 +239,19 @@ class KnowledgeGraphStore:
         Compact graph if over token limit.
         Archive lowest-scored nodes until estimate <= 90% of max.
         """
-        if self._estimated_tokens[level] <= self.KG_MAX_TOKENS:
+        # Fresh calculation
+        estimated_tokens = self._estimate_tokens(level)
+
+        if estimated_tokens <= self.KG_MAX_TOKENS:
             return
 
-        logger.info(f"Compacting {level} graph: {self._estimated_tokens[level]} tokens > {self.KG_MAX_TOKENS} limit")
+        logger.info(f"Compacting {level} graph: {estimated_tokens} tokens > {self.KG_MAX_TOKENS} limit")
 
-        # Score all active nodes (excluding session-protected)
+        # Score all active nodes (excluding grace-protected)
         scores = self._score_nodes(level)
 
         if not scores:
-            logger.debug(f"No nodes eligible for archiving in {level} graph (all session-protected)")
+            logger.debug(f"No nodes eligible for archiving in {level} graph (all within grace period)")
             return
 
         # Sort by score (ascending - lowest scores first)
@@ -246,30 +262,24 @@ class KnowledgeGraphStore:
         archived_count = 0
 
         for node_id, score in sorted_nodes:
-            if self._estimated_tokens[level] <= target:
+            if estimated_tokens <= target:
                 break
 
-            # Find and archive the node
-            idx = self._node_index[level].get(node_id)
-            if idx is not None:
-                node = self.graphs[level]["nodes"][idx]
-                if not node.get("_archived"):
-                    # Calculate token cost before archiving
-                    token_cost = self._node_token_cost(node)
+            node = self.graphs[level]["nodes"].get(node_id)
+            if node and not node.get("_archived"):
+                # Calculate token cost before archiving
+                token_cost = self._node_token_cost(node)
 
-                    # Archive the node
-                    node["_archived"] = True
+                # Archive the node
+                node["_archived"] = True
 
-                    # Update token estimate
-                    self._estimated_tokens[level] -= token_cost
-                    archived_count += 1
+                # Update estimate
+                estimated_tokens -= token_cost
+                archived_count += 1
 
-                    logger.debug(f"Archived node '{node_id}' (score: {score:.2f}, tokens: {token_cost})")
+                logger.debug(f"Archived node '{node_id}' (score: {score:.2f}, tokens: {token_cost})")
 
-        # Recalculate to correct any drift
-        self._estimated_tokens[level] = self._estimate_tokens_full(level)
-
-        logger.info(f"Compaction complete: archived {archived_count} nodes, now {self._estimated_tokens[level]} tokens")
+        logger.info(f"Compaction complete: archived {archived_count} nodes, now ~{estimated_tokens} tokens")
 
         if archived_count > 0:
             self.dirty[level] = True
@@ -279,12 +289,15 @@ class KnowledgeGraphStore:
         Prune orphaned archived nodes (those with no active connections).
         Sets _orphaned_ts on newly orphaned nodes, deletes after grace period.
         """
+        nodes = self.graphs[level]["nodes"]
+        edges = self.graphs[level]["edges"]
+
         # Build set of active node IDs
-        active_ids = {node["id"] for node in self.graphs[level]["nodes"] if not node.get("_archived")}
+        active_ids = {node_id for node_id, node in nodes.items() if not node.get("_archived")}
 
         # Build set of reachable archived nodes (connected to active nodes)
         reachable = set()
-        for edge in self.graphs[level]["edges"]:
+        for edge in edges.values():
             if edge["from"] in active_ids:
                 reachable.add(edge["to"])
             if edge["to"] in active_ids:
@@ -295,11 +308,9 @@ class KnowledgeGraphStore:
         grace_seconds = self.KG_ORPHAN_GRACE_DAYS * 24 * 60 * 60
         to_delete = []
 
-        for node in self.graphs[level]["nodes"]:
+        for node_id, node in nodes.items():
             if not node.get("_archived"):
                 continue
-
-            node_id = node["id"]
 
             if node_id in reachable:
                 # Connected to active nodes - clear orphaned timestamp
@@ -322,11 +333,41 @@ class KnowledgeGraphStore:
                         logger.debug(f"Node '{node_id}' grace period expired, marking for deletion")
 
         # Delete expired orphans
-        if to_delete:
-            for node_id in to_delete:
-                result = self.delete_node(level, node_id)
-                if result.get("deleted"):
-                    logger.info(f"Deleted orphaned node '{node_id}' from {level} graph")
+        for node_id in to_delete:
+            self._delete_node_internal(level, node_id)
+            logger.info(f"Deleted orphaned node '{node_id}' from {level} graph")
+
+    def _delete_node_internal(self, level: str, node_id: str):
+        """Internal node deletion with edge cleanup. No lock (caller must hold lock)."""
+        nodes = self.graphs[level]["nodes"]
+        edges = self.graphs[level]["edges"]
+
+        if node_id not in nodes:
+            return False
+
+        # Delete connected edges first
+        edges_to_delete = [
+            key for key, edge in edges.items()
+            if edge["from"] == node_id or edge["to"] == node_id
+        ]
+        for edge_key in edges_to_delete:
+            edge = edges[edge_key]
+            del edges[edge_key]
+            # Remove version tracking
+            version_key = self._version_key_edge(edge["from"], edge["to"], edge["rel"])
+            if version_key in self._versions[level]:
+                del self._versions[level][version_key]
+
+        # Delete the node
+        del nodes[node_id]
+
+        # Remove version tracking
+        version_key = self._version_key_node(node_id)
+        if version_key in self._versions[level]:
+            del self._versions[level][version_key]
+
+        self.dirty[level] = True
+        return True
 
     def _periodic_save(self):
         """Background thread to periodically save dirty graphs."""
@@ -389,20 +430,26 @@ class KnowledgeGraphStore:
             result = {"user": {}, "project": {}}
 
             for level in ["user", "project"]:
+                nodes = self.graphs[level]["nodes"]
+                edges = self.graphs[level]["edges"]
+
                 # Filter active nodes only
-                active_nodes = [node for node in self.graphs[level]["nodes"] if not node.get("_archived")]
+                active_nodes = {
+                    node_id: node for node_id, node in nodes.items()
+                    if not node.get("_archived")
+                }
 
                 # Build set of active node IDs
-                active_ids = {node["id"] for node in active_nodes}
+                active_ids = set(active_nodes.keys())
 
                 # Filter edges - include if either endpoint is active (shows "memory traces")
                 active_edges = [
-                    edge for edge in self.graphs[level]["edges"]
+                    edge for edge in edges.values()
                     if edge["from"] in active_ids or edge["to"] in active_ids
                 ]
 
                 result[level] = {
-                    "nodes": active_nodes,
+                    "nodes": list(active_nodes.values()),
                     "edges": active_edges
                 }
 
@@ -422,16 +469,19 @@ class KnowledgeGraphStore:
             result = {"user": {"nodes": [], "edges": []}, "project": {"nodes": [], "edges": []}}
 
             for level in ["user", "project"]:
+                nodes = self.graphs[level]["nodes"]
+                edges = self.graphs[level]["edges"]
+
                 # Build set of active node IDs for edge filtering
-                active_ids = {node["id"] for node in self.graphs[level]["nodes"] if not node.get("_archived")}
+                active_ids = {node_id for node_id, node in nodes.items() if not node.get("_archived")}
 
                 # Find changed nodes (active only)
-                for node in self.graphs[level]["nodes"]:
+                for node_id, node in nodes.items():
                     # Skip archived nodes
                     if node.get("_archived"):
                         continue
 
-                    key = self._version_key_node(node["id"])
+                    key = self._version_key_node(node_id)
                     ver = self._versions[level].get(key, {})
 
                     if ver.get("ts", 0) > start_ts:
@@ -441,7 +491,7 @@ class KnowledgeGraphStore:
                         result[level]["nodes"].append(node)
 
                 # Find changed edges (if either endpoint is active)
-                for edge in self.graphs[level]["edges"]:
+                for edge in edges.values():
                     # Skip edges with both endpoints archived
                     if edge["from"] not in active_ids and edge["to"] not in active_ids:
                         continue
@@ -453,13 +503,13 @@ class KnowledgeGraphStore:
                         if exclude_own and ver.get("session") == session_id:
                             continue
                         result[level]["edges"].append(edge)
-            
+
             # Count changes
             total_changes = sum(
                 len(result[l]["nodes"]) + len(result[l]["edges"])
                 for l in ["user", "project"]
             )
-            
+
             return {
                 "since_ts": start_ts,
                 "changes": result,
@@ -471,33 +521,16 @@ class KnowledgeGraphStore:
                  session_id: Optional[str] = None) -> dict:
         """Add or update a node."""
         with self.lock:
+            nodes = self.graphs[level]["nodes"]
+
             node = {"id": node_id, "gist": gist}
             if touches:
                 node["touches"] = touches
             if notes:
                 node["notes"] = notes
 
-            # Upsert (using index for O(1) lookup)
-            nodes = self.graphs[level]["nodes"]
-            existing_idx = self._node_index[level].get(node_id)
-
-            if existing_idx is not None:
-                # Update: subtract old cost, add new cost
-                old_node = nodes[existing_idx]
-                if not old_node.get("_archived"):
-                    old_cost = self._node_token_cost(old_node)
-                    new_cost = self._node_token_cost(node)
-                    self._estimated_tokens[level] = self._estimated_tokens[level] - old_cost + new_cost
-
-                nodes[existing_idx] = node
-                action = "updated"
-            else:
-                # Add: increment token estimate
-                new_idx = len(nodes)
-                nodes.append(node)
-                self._node_index[level][node_id] = new_idx
-                self._estimated_tokens[level] += self._node_token_cost(node)
-                action = "added"
+            action = "updated" if node_id in nodes else "added"
+            nodes[node_id] = node
 
             # Track version
             self._bump_version(level, self._version_key_node(node_id), session_id)
@@ -510,23 +543,15 @@ class KnowledgeGraphStore:
                  notes: Optional[list] = None, session_id: Optional[str] = None) -> dict:
         """Add or update an edge."""
         with self.lock:
+            edges = self.graphs[level]["edges"]
+
             edge = {"from": from_ref, "to": to_ref, "rel": rel}
             if notes:
                 edge["notes"] = notes
 
-            # Upsert (using index for O(1) lookup)
-            edges = self.graphs[level]["edges"]
             edge_key = (from_ref, to_ref, rel)
-            existing_idx = self._edge_index[level].get(edge_key)
-
-            if existing_idx is not None:
-                edges[existing_idx] = edge
-                action = "updated"
-            else:
-                new_idx = len(edges)
-                edges.append(edge)
-                self._edge_index[level][edge_key] = new_idx
-                action = "added"
+            action = "updated" if edge_key in edges else "added"
+            edges[edge_key] = edge
 
             # Track version
             self._bump_version(level, self._version_key_edge(from_ref, to_ref, rel), session_id)
@@ -536,74 +561,47 @@ class KnowledgeGraphStore:
             return {"action": action, "edge": edge}
 
     def delete_node(self, level: str, node_id: str) -> dict:
-        """Delete a node."""
+        """Delete a node and its connected edges."""
         with self.lock:
-            idx = self._node_index[level].get(node_id)
+            if node_id not in self.graphs[level]["nodes"]:
+                return {"deleted": False, "node_id": node_id}
 
-            if idx is not None:
-                node = self.graphs[level]["nodes"][idx]
-
-                # Decrement token estimate if node was active
-                if not node.get("_archived"):
-                    self._estimated_tokens[level] -= self._node_token_cost(node)
-
-                # Remove the node
-                del self.graphs[level]["nodes"][idx]
-
-                # Rebuild node index for this level (indices shifted after deletion)
-                self._node_index[level] = {
-                    node["id"]: i
-                    for i, node in enumerate(self.graphs[level]["nodes"])
-                }
-
-                # Mark as deleted by removing version
-                key = self._version_key_node(node_id)
-                if key in self._versions[level]:
-                    del self._versions[level][key]
-
-                self.dirty[level] = True
-                logger.debug(f"Deleted node '{node_id}' from {level} graph")
-                return {"deleted": True, "node_id": node_id}
-            return {"deleted": False, "node_id": node_id}
+            self._delete_node_internal(level, node_id)
+            logger.debug(f"Deleted node '{node_id}' from {level} graph")
+            return {"deleted": True, "node_id": node_id}
 
     def delete_edge(self, level: str, from_ref: str, to_ref: str, rel: str) -> dict:
         """Delete an edge."""
         with self.lock:
+            edges = self.graphs[level]["edges"]
             edge_key = (from_ref, to_ref, rel)
-            idx = self._edge_index[level].get(edge_key)
 
-            if idx is not None:
-                # Remove the edge
-                del self.graphs[level]["edges"][idx]
+            if edge_key not in edges:
+                return {"deleted": False, "edge": {"from": from_ref, "to": to_ref, "rel": rel}}
 
-                # Rebuild edge index for this level (indices shifted after deletion)
-                self._edge_index[level] = {
-                    (edge["from"], edge["to"], edge["rel"]): i
-                    for i, edge in enumerate(self.graphs[level]["edges"])
-                }
+            del edges[edge_key]
 
-                # Mark as deleted by removing version
-                key = self._version_key_edge(from_ref, to_ref, rel)
-                if key in self._versions[level]:
-                    del self._versions[level][key]
+            # Remove version tracking
+            version_key = self._version_key_edge(from_ref, to_ref, rel)
+            if version_key in self._versions[level]:
+                del self._versions[level][version_key]
 
-                self.dirty[level] = True
-                logger.debug(f"Deleted edge '{from_ref}' -> '{to_ref}' ({rel}) from {level} graph")
-                return {"deleted": True, "edge": {"from": from_ref, "to": to_ref, "rel": rel}}
-            return {"deleted": False, "edge": {"from": from_ref, "to": to_ref, "rel": rel}}
+            self.dirty[level] = True
+            logger.debug(f"Deleted edge '{from_ref}' -> '{to_ref}' ({rel}) from {level} graph")
+            return {"deleted": True, "edge": {"from": from_ref, "to": to_ref, "rel": rel}}
 
     def recall(self, level: str, node_id: str) -> dict:
         """
         Retrieve an archived node back into active context.
-        Removes _archived flag, clears _orphaned_ts, bumps version, increments tokens.
+        Removes _archived flag, clears _orphaned_ts, bumps version.
         """
         with self.lock:
-            idx = self._node_index[level].get(node_id)
+            nodes = self.graphs[level]["nodes"]
 
-            if idx is None:
+            if node_id not in nodes:
                 return {"error": f"Node '{node_id}' not found in {level} graph"}
 
-            node = self.graphs[level]["nodes"][idx]
+            node = nodes[node_id]
 
             if not node.get("_archived"):
                 return {"error": f"Node '{node_id}' is not archived"}
@@ -615,11 +613,8 @@ class KnowledgeGraphStore:
             if "_orphaned_ts" in node:
                 del node["_orphaned_ts"]
 
-            # Bump version timestamp (prevents immediate re-archive)
+            # Bump version timestamp (refreshes recency for scoring)
             self._bump_version(level, self._version_key_node(node_id))
-
-            # Increment token estimate
-            self._estimated_tokens[level] += self._node_token_cost(node)
 
             self.dirty[level] = True
 
@@ -712,7 +707,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="kg_delete_node",
-            description="Delete a node from the knowledge graph.",
+            description="Delete a node and its connected edges from the knowledge graph.",
             inputSchema={
                 "type": "object",
                 "properties": {

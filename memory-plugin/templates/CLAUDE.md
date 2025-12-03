@@ -1,89 +1,46 @@
 # Knowledge Graph
 
-## Session Start
+## Session Start Hook
 
-On session start, load the knowledge graph into context.
+On new session or `/clear`, immediately:
 
-### Action
+1. `kg_read()` — Load full graph into context
+2. `kg_register_session()` — Get session_id for sync tracking
 
-Call `kg_read()` to load both user and project knowledge graphs, then `kg_register_session()` to enable sync tracking.
+This runs automatically based on these instructions. Do not skip.
 
-### Sequence
+## Core Behavior
 
-1. `kg_read()` - Full graph load into context
-2. `kg_register_session()` - Get session_id, store it for later sync calls
+**Capture knowledge as you work** and do it often.
 
-### When This Runs
+What to capture:
+- All bits important for future work
+- Patterns and insights discovered
+- Relationships between artefacts, code, concepts, decisions
+- Corrections from debugging
+- Rationales behind choices
+- Learning from mistakes
 
-- New session start
-- Context clear (`/clear`)
+How to capture:
+- `kg_put_node` — New insight or concept
+- `kg_put_edge` — Relationship between existing things
+- Prefer edges over nodes when possible
 
-Does NOT run on:
-- Resume (context already has graph)
-- Compact (would lose session continuity)
+Levels:
+- `user` — Cross-project wisdom, personal patterns
+- `project` — Codebase-specific knowledge
 
-### Why
+## Memory Traces
 
-The knowledge graph contains patterns, insights, and relationships discovered in previous sessions. Loading at start ensures continuity of understanding without manual intervention.
+When the graph grows large, older/less-connected nodes get archived automatically. But their edges remain visible — you'll see relationships pointing to nodes not in your view.
 
-Session registration enables real-time collaboration - other agents/sessions can write to the graph, and this session can pull their changes via `kg_sync(session_id)`.
+These are "memory traces" — hints that relevant knowledge exists. Use `kg_recall(level, id)` to bring archived nodes back when you need deeper context for a task. Do as many of recalls as you need to find necessary context.
 
-## Knowledge processing
+## Collaboration
 
-Extract and remember patterns, insights, and relationships worth preserving across sessions.
+- Call `kg_sync(session_id)` to pull updates from all other sessions
+- Review updates from other sessions if exists, then proceed
 
-**What to capture:**
-- Patterns observed (architectural, behavioral, conceptual)
-- Relationships discovered (between code, concepts, decisions)
-- Corrections and learnings from debugging
-- Mental models and named abstractions
-- Open questions and technical considerations
-- Rationales behind choices made
+## Details
 
-**When to capture:**
-Immediately as insights emerge - capture in the same response where you notice them. Don't defer to end of conversation. Context is freshest at the moment of discovery.
-
-**How to capture:**
-Use MCP tools: `kg_put_node` (insights/concepts) or `kg_put_edge` (relationships).
-Capture while working, not as a separate step.
-
-**Syncing (conflict resolution):**
-- Before important decisions, sync first: call `kg_read` to get latest updates
-- Last write wins - frequent syncs ensure you have current context
-- Use `/kg-sync` or ask to "sync knowledge graph" when collaborating across sessions
-
-**Subagent coordination:**
-When spawning subagents that need domain knowledge:
-- Include instruction: "First call kg_read to load knowledge graph"
-- For simple tasks (grep, file ops): skip graph load (unnecessary context)
-- Subagent contributions automatically visible to parent via shared MCP server
-
-**Key principles:**
-- Maximum insight per symbol added
-- Prefer edges when connecting existing things, nodes when naming new concepts
-- User-level: cross-project wisdom; Project-level: codebase-specific knowledge
-- Capture imperfectly rather than lose understanding
-
-## Auto-Compaction
-
-The knowledge graph automatically manages its size to stay within context window limits:
-
-**How it works:**
-- Low-value nodes are archived when the graph exceeds the token limit (default: 5000 tokens)
-- Archived nodes remain on disk but hidden from `kg_read()` and `kg_sync()`
-- Edges to archived nodes remain visible as "memory traces" - you'll see relationships pointing to nodes not in your view
-- Nodes created/modified in the current session are protected from archiving
-
-**Value scoring:**
-Nodes are scored based on:
-- Recency (exponential decay, half-life 7 days)
-- Connectedness (edge count + touches)
-- Richness (content length)
-
-**Retrieving archived nodes:**
-When you see an edge pointing to a missing node, use `kg_recall(level, id)` to bring it back into active context.
-
-**Orphan cleanup:**
-Archived nodes with no connections to active nodes are deleted after a grace period (default: 7 days).
-
-For detailed structure and examples: `/skill memory`
+For full API reference, scoring algorithm, and examples: `/skill memory`

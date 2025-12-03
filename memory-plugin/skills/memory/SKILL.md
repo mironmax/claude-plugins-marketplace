@@ -1,35 +1,17 @@
 ---
 name: memory
-description: Extract and remember required knowledge from any conversations
+description: Extract and remember knowledge across sessions
 ---
 
-# Knowledge Graph Extraction
+# Knowledge Graph — Full Reference
 
-## Approach
+## Concept
 
-Extract patterns, insights, and relationships worth remembering. Anything that might be needed again in future work: decisions, mental models, behavioral patterns, rationales, corrections, learnings from mistakes, open questions, and relationships that make knowledge *legible* and *actionable* across sessions.
+The knowledge graph captures patterns, insights, and relationships worth remembering. Each entry should be atomic and linkable. The goal: maximum recovered insight per added symbol.
 
-Each extracted unit should be atomic and linkable. Prefer discovering a *relationship between existing things* over minting a new concept. Create a new node only when an insight is truly orphan — when it cannot attach to what already exists.
+Two entry types:
 
-Compressing the senses: use entries as short as possible while retaining maximum information, in a way humans can reconstruct fluently. Maximum recovered insight per added symbol.
-
-## Structure
-
-The graph consists of two types of entries:
-
-**Edges** — relationships discovered between existing things (files, functions, concepts, doc sections).
-
-```json
-{
-  "from": "config.py",
-  "to": "db/init.py",
-  "rel": "must-load-before",
-  "notes": ["discovered during cold-start debugging"]
-}
-```
-
-**Nodes** — new concepts, patterns, or named abstractions that emerged and have no home yet.
-
+**Nodes** — Named concepts, patterns, or insights
 ```json
 {
   "id": "silent-dependency-pattern",
@@ -39,165 +21,217 @@ The graph consists of two types of entries:
 }
 ```
 
+**Edges** — Relationships between things (files, concepts, nodes)
+```json
+{
+  "from": "config.py",
+  "to": "db/init.py",
+  "rel": "must-load-before",
+  "notes": ["discovered during cold-start debugging"]
+}
+```
+
 Use short descriptive kebab-case for `id` and `rel`. Reference artifacts directly by path or path:line — no need to wrap them in nodes.
 
 The `touches` field is for light, tentative references — when you sense relevance but the relationship isn't crisp enough to be an edge yet.
 
 The `notes` field holds caveats, rationale, open questions, or any other context. Optional on both edges and nodes.
 
+1. Prefer edges and connect existing things.
+2. Create nodes when relationship is not capturing what is needed.
+3. Add notes when creating node or edge does not make sense.
+4. Add touches, to mark things that may evolve
+
+
+Compress the meaning: use entries as short as possible while retaining maximum information, in a way humans can reconstruct fluently. Maximum recovered insight per added symbol.
+
 ## Levels
 
-**Project level** — lives in project folder (`.knowledge/graph.json`), shareable via git:
-- Relationships between this project's artifacts
-- Decisions and rationales specific to this codebase
-- Discovered patterns in this code
-- Open questions about this project
-
-**User level** — lives in home (`~/.claude/knowledge/user.json`), never shared:
-- General patterns observed across projects
+**User level** (`~/.claude/knowledge/user.json`):
+- Cross-project patterns
 - Personal preferences and heuristics
-- Reusable concepts you've named
-- Working style notes
+- Reusable concepts
+- Never shared
 
-The test: "Would this make sense to a teammate who cloned the repo?" If yes → project. If it's about you, your personal preferences, working environment, or applicable across all projects → user.
+**Project level** (`.knowledge/graph.json`):
+- Codebase-specific relationships
+- Project decisions and rationales
+- Local conventions
+- Shareable via git
 
-## Session Workflow
+Test: "Would this make sense to a teammate who cloned the repo?" → Project. Otherwise → User.
 
-### Automatic Loading (Hook)
+## API Reference
 
-On session start and context clear, the graph loads automatically via hook:
-1. `kg_read()` → full graph into context
-2. `kg_register_session()` → session_id for sync tracking
+### Reading
 
-You don't need to do this manually.
-
-### During Session
-
-**Capture immediately** when insights emerge:
+**`kg_read()`**
+Returns both user and project graphs. Active nodes only.
 ```
-kg_put_node(
-  level="user",
-  id="pattern-name",
-  gist="The insight itself",
-  touches=["file.py", "concept"],  // optional
-  notes=["Context or rationale"],  // optional
-  session_id="your-session-id"     // optional, for tracking
-)
-
-kg_put_edge(
-  level="project",
-  from="config.py",
-  to="main.py",
-  rel="must-load-before",
-  notes=["Discovered during debugging"],
-  session_id="your-session-id"
-)
+→ {"user": {"nodes": [...], "edges": [...]}, "project": {...}}
 ```
 
-### Real-Time Collaboration (Sync)
-
-When other sessions or subagents may have written to the graph:
-
+**`kg_sync(session_id)`**
+Returns changes since session start, excluding your own writes.
 ```
-kg_sync(session_id="your-session-id")
+→ {"since_ts": 1234567890, "changes": {...}, "total_changes": 5}
 ```
 
-Returns only changes from OTHER sessions since your session started. Your own writes are excluded (already in your context).
+### Writing
 
-**Pull-before-push discipline:**
-1. Before important writes, call `kg_sync` first
-2. Review diff for relevant new knowledge
-3. Reconsider your planned write in light of new info
-4. Then write
+**`kg_put_node(level, id, gist, touches?, notes?, session_id?)`**
+Add or update a node.
+- `level`: "user" or "project"
+- `id`: kebab-case identifier
+- `gist`: the insight itself
+- `touches`: optional list of related nodes
+- `notes`: optional context, caveats, rationale
 
-### Delete Operations
+**`kg_put_edge(level, from, to, rel, notes?, session_id?)`**
+Add or update an edge.
+- `from`/`to`: node IDs or artifact paths
+- `rel`: relationship type (kebab-case)
 
-```
-kg_delete_node(level="user", id="node-id")
-kg_delete_edge(level="project", from="a", to="b", rel="depends-on")
-```
+### Deleting
 
-### Recall Archived Nodes
+**`kg_delete_node(level, id)`**
+Removes node and all connected edges.
 
-When you see edges pointing to nodes not in your current view (archived nodes):
+**`kg_delete_edge(level, from, to, rel)`**
+Removes a specific edge.
 
-```
-kg_recall(level="user", id="node-id")
-```
+### Session Management
 
-Brings the archived node back into active context. The node is immediately visible in subsequent reads and syncs.
+**`kg_register_session()`**
+Register for sync tracking. Returns your `session_id`.
 
-## Principles
+**`kg_recall(level, id)`**
+Read the archived node and retrieve back into active context.
 
-- Prefer edges over nodes
-- Prefer adding notes to existing entries over creating new ones
-- Let content be fluid — capture imperfectly over losing insight
-- Level is always required — forces conscious choice about scope
-- The graph is a living patch, not a schema to satisfy
-- Pull before push when collaborating
+**`kg_ping()`**
+Health check. Returns node/edge counts and active sessions.
 
-## Subagent Coordination
+## Auto-Compaction
 
-**When spawning subagents:**
-- For domain tasks needing context: "First call kg_read to load knowledge graph"
-- For simple operations (file ops, searches): Skip graph load
-- Subagent writes are immediately visible to parent via shared MCP server
-- After subagent completes: call `kg_sync` to see what they discovered
-
-**Session coordination:**
-- All sessions connect to same MCP server (single source of truth)
-- Changes immediately visible to all connected sessions
-- Explicit `kg_sync()` fetches latest into your context, excluding your own writes
-
-## Conflict Resolution
-
-**Last write wins.** Mitigated by:
-- Pull-before-push discipline
-- LLM reconsideration after sync
-- Small atomic entries reduce conflict surface
-- Frequent syncs in collaborative scenarios
-
-## Auto-Compaction & Archiving
-
-The knowledge graph automatically manages its size to stay within context window limits:
+The graph automatically manages its size to fit context windows.
 
 ### How It Works
 
-- **Token limit:** Default 5000 tokens (configurable via `KG_MAX_TOKENS`)
-- **Automatic archiving:** When over limit, lowest-scored nodes are archived
-- **Session protection:** Nodes created/modified in current session never archived
-- **Persistent storage:** Archived nodes remain on disk, just hidden from reads
-- **Memory traces:** Edges to archived nodes remain visible - you'll see relationships pointing to missing nodes
-- **Manual recall:** Use `kg_recall(level, id)` to bring archived nodes back
+1. Every 30 seconds, system checks token estimate against limit (default: 5000)
+2. If over limit, lowest-scored nodes are archived until under 90% of limit
+3. Archived nodes remain on disk but hidden from `kg_read()` or `kg_sync()` 
+4. Edges from active to archived nodes remain visible ("memory traces")
+5. Orphaned archived nodes (no active connections) deleted after grace period
 
-### Node Scoring
+### Scoring Algorithm
 
-Nodes are scored by multiplying three factors:
+Nodes updated within **7 days are protected** — never archived regardless of score.
 
-1. **Recency:** Exponential decay, half-life 7 days (`2^(-age_days/7)`)
-2. **Connectedness:** Log scale based on edge count + touches (`1 + log(1 + edges + touches)`)
-3. **Richness:** Content investment (`1 + log(1 + gist_length + notes_length)`)
+For older nodes, percentile ranking across three dimensions:
 
-Higher score = more valuable = kept longer.
+1. **Recency** — When was it last updated? (fresher = higher percentile)
+2. **Connectedness** — How many edges + touches? (more = higher percentile)
+3. **Richness** — How much content in gist + notes? (more = higher percentile)
 
-### Orphan Cleanup
+Final score = recency_pct × connectedness_pct × richness_pct
 
-- Archived nodes with no connections to active nodes are "orphaned"
-- After grace period (default 7 days, configurable via `KG_ORPHAN_GRACE_DAYS`), orphans are permanently deleted
-- Reconnecting an orphaned node (e.g., via recall or new edge) clears its orphan timer
+Lowest scores archived first.
 
-### Typical Flow
+### Memory Traces
 
-1. Graph grows beyond 5000 tokens
-2. System archives lowest-scored nodes until under 4500 tokens (90% of limit)
-3. You see edges pointing to archived nodes
-4. Call `kg_recall(level, id)` if you need one back
-5. Recalled node gets fresh timestamp, protected from immediate re-archive
+When a node is archived, edges pointing to it from active nodes remain visible. You'll see relationships like:
 
-### Manual Pruning
+```
+active-node → archived-node-id (relationship)
+```
 
-Still use delete operations for truly invalid knowledge:
+This is intentional — it hints that relevant knowledge exists. When you encounter a memory trace that might be relevant to your current task:
 
-- `kg_delete_node()` - Remove incorrect or obsolete nodes
-- `kg_delete_edge()` - Remove incorrect relationships
-- Prefer updating over deleting when knowledge is partially valid
+1. Note the archived node ID from the edge
+2. Call `kg_recall(level, id)` to bring it back
+3. Node returns to active context with refreshed timestamp
+
+This lets you "drill down" into dusty knowledge when you need deeper context.
+
+### Keeping Nodes Alive
+
+Nodes stay active by:
+- Being updated (refreshes timestamp → 7-day grace restarts)
+- Having edges to active nodes (connectedness score)
+
+If you need to preserve a node, update it occasionally or connect it to active knowledge.
+
+## Multi-Session Collaboration
+
+All sessions share the same MCP server. Changes are eventually shared between with each write and sync.
+
+### Workflow
+
+1. Session A writes a node
+2. Session B calls `kg_sync(session_id)` 
+3. Session B sees the new node (if written by a different session)
+
+### Conflict Resolution
+
+**Last write wins.** Mitigated by:
+- Pull-before-push discipline (sync before important writes)
+- Small atomic entries (reduce conflict surface)
+- Frequent syncs in collaborative scenarios (ping to know active sessions)
+
+### Subagent Coordination
+
+When spawning subagents/tasks that need domain context:
+- Include: "First call kg_read to load knowledge graph"
+- Skip for simple tasks (file ops, searches) — unnecessary context
+
+Subagent writes are visible to parent via shared server (eventually). After subagent completes, parent can `kg_sync` to see discoveries.
+
+## Examples
+
+### Capturing a Pattern
+
+```
+kg_put_node(
+  level="project",
+  id="config-load-order",
+  gist="Config must load before DB init or connections fail silently",
+  touches=["config.py", "db/init.py"],
+  notes=["Discovered debugging cold-start issue, took 2 hours"]
+)
+```
+
+### Recording a Relationship
+
+```
+kg_put_edge(
+  level="project",
+  from="config.py",
+  to="db/init.py",
+  rel="must-load-before"
+)
+```
+
+### Recalling Archived Knowledge
+
+You see an edge: `auth-module → old-security-decision (influenced-by)`
+
+```
+kg_recall(level="project", id="old-security-decision")
+→ {"recalled": true, "node": {"id": "old-security-decision", "gist": "..."}}
+```
+
+Now you have context for why auth works the way it does.
+
+## Best Practices
+
+1. **Capture immediately** — Don't defer to end of session. Context is freshest at discovery.
+
+2. **Prefer edges** — Connect existing things rather than creating new nodes.
+
+3. **Be terse** — Maximum insight per symbol. Short gists, minimal notes.
+
+4. **Level consciously** — User for personal wisdom, project for team knowledge.
+
+5. **Sync before push** — In collaborative scenarios, pull updates first.
+
+6. **Follow memory traces** — When you see edges to missing nodes, consider (from its id) if that context matters for your current task.
