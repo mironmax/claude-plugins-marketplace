@@ -1,6 +1,6 @@
 {
-  "name": "knowledge-graph",
-  "version": "1.1.0",
+  "name": "memory",
+  "version": "0.2.0",
   "description": "Extract and remember patterns, insights, and relationships worth preserving across sessions. Fast in-memory MCP server with sub-millisecond operations and real-time sync.",
   "author": {
     "name": "Maxim",
