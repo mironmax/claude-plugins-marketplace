@@ -1,5 +1,35 @@
 # Knowledge Graph
 
+## Session Start
+
+On session start, load the knowledge graph into context.
+
+### Action
+
+Call `kg_read()` to load both user and project knowledge graphs, then `kg_register_session()` to enable sync tracking.
+
+### Sequence
+
+1. `kg_read()` - Full graph load into context
+2. `kg_register_session()` - Get session_id, store it for later sync calls
+
+### When This Runs
+
+- New session start
+- Context clear (`/clear`)
+
+Does NOT run on:
+- Resume (context already has graph)
+- Compact (would lose session continuity)
+
+### Why
+
+The knowledge graph contains patterns, insights, and relationships discovered in previous sessions. Loading at start ensures continuity of understanding without manual intervention.
+
+Session registration enables real-time collaboration - other agents/sessions can write to the graph, and this session can pull their changes via `kg_sync(session_id)`.
+
+## Knowledge processing
+
 Extract and remember patterns, insights, and relationships worth preserving across sessions.
 
 **What to capture:**

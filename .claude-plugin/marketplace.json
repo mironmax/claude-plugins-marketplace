@@ -12,7 +12,7 @@
       "name": "knowledge-graph",
       "description": "Extract and remember patterns, insights, and relationships across sessions. Fast in-memory MCP server with git-style sync.",
       "source": "./knowledge-graph-plugin",
-      "version": "1.0.0"
+      "version": "1.1.0"
     }
   ]
 }

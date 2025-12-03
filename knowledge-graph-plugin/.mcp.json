@@ -2,10 +2,10 @@
   "mcpServers": {
     "knowledge-graph": {
       "command": "bash",
-      "args": ["{PLUGIN_DIR}/server/start.sh"],
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server/start.sh"],
       "env": {
-        "KG_USER_PATH": "{HOME}/.claude/knowledge/user.json",
-        "KG_PROJECT_PATH": "{PROJECT_ROOT}/.knowledge/graph.json"
+        "KG_USER_PATH": "${HOME}/.claude/knowledge/user.json",
+        "KG_PROJECT_PATH": ".knowledge/graph.json"
       }
     }
   }

@@ -7,11 +7,11 @@ description: Extract and remember required knowledge from any conversations
 
 ## Approach
 
-Extract patterns, insights, and relationships worth remembering. Anything that might be again needed in future work. Example: decisions, mental models, behavioral patterns, rationales, corrections, learnings from mistakes, open questions, and relationships that make knowledge *legible* and *actionable* across sessions.
+Extract patterns, insights, and relationships worth remembering. Anything that might be needed again in future work: decisions, mental models, behavioral patterns, rationales, corrections, learnings from mistakes, open questions, and relationships that make knowledge *legible* and *actionable* across sessions.
 
 Each extracted unit should be atomic and linkable. Prefer discovering a *relationship between existing things* over minting a new concept. Create a new node only when an insight is truly orphan — when it cannot attach to what already exists.
 
-Compressing the senses: use as short entries as you can, while retaining as much information as possible, in the way that human may reconstruct it fluently, maximum recovered insight per added symbol.
+Compressing the senses: use entries as short as possible while retaining maximum information, in a way humans can reconstruct fluently. Maximum recovered insight per added symbol.
 
 ## Structure
 
@@ -59,51 +59,63 @@ The `notes` field holds caveats, rationale, open questions, or any other context
 - Reusable concepts you've named
 - Working style notes
 
-The test: "Would this make sense to a teammate who cloned the repo?" If yes → project. If it's about you, your personal preferences, working environment or applicable accross all projects → user.
+The test: "Would this make sense to a teammate who cloned the repo?" If yes → project. If it's about you, your personal preferences, working environment, or applicable across all projects → user.
 
-## Usage
+## Session Workflow
 
-The knowledge graph is available via MCP tools (fast, in-memory with auto-persistence)
+### Automatic Loading (Hook)
 
-Most of the time it is read automatically on session start or clear.
+On session start and context clear, the graph loads automatically via hook:
+1. `kg_read()` → full graph into context
+2. `kg_register_session()` → session_id for sync tracking
 
-**Read the graph:**
-```
-kg_read()  // Returns both user and project graphs
-kg_read(level="user")  // Just user graph
-```
+You don't need to do this manually.
 
-**Add or update a node:**
+### During Session
+
+**Capture immediately** when insights emerge:
 ```
 kg_put_node(
   level="user",
   id="pattern-name",
   gist="The insight itself",
   touches=["file.py", "concept"],  // optional
-  notes=["Context or rationale"]   // optional
+  notes=["Context or rationale"],  // optional
+  session_id="your-session-id"     // optional, for tracking
 )
-```
 
-**Add or update an edge:**
-```
 kg_put_edge(
   level="project",
   from="config.py",
   to="main.py",
   rel="must-load-before",
-  notes=["Discovered during debugging"]  // optional
+  notes=["Discovered during debugging"],
+  session_id="your-session-id"
 )
 ```
 
-**Delete operations:**
+### Real-Time Collaboration (Sync)
+
+When other sessions or subagents may have written to the graph:
+
+```
+kg_sync(session_id="your-session-id")
+```
+
+Returns only changes from OTHER sessions since your session started. Your own writes are excluded (already in your context).
+
+**Pull-before-push discipline:**
+1. Before important writes, call `kg_sync` first
+2. Review diff for relevant new knowledge
+3. Reconsider your planned write in light of new info
+4. Then write
+
+### Delete Operations
+
 ```
 kg_delete_node(level="user", id="node-id")
 kg_delete_edge(level="project", from="a", to="b", rel="depends-on")
 ```
-
-Level is always required: `user` or `project`.
-
-**Timing:** Capture immediately when insights emerge, ideally in the same response where you discover them.
 
 ## Principles
 
@@ -112,39 +124,31 @@ Level is always required: `user` or `project`.
 - Let content be fluid — capture imperfectly over losing insight
 - Level is always required — forces conscious choice about scope
 - The graph is a living patch, not a schema to satisfy
+- Pull before push when collaborating
 
-## Conflict Resolution & Syncing
+## Subagent Coordination
 
-**Last write wins:** When multiple sessions modify the same node/edge, the most recent write overwrites previous versions.
-
-**Best practices:**
-- Before important architectural decisions, sync first: `kg_read()`
-- In collaborative scenarios (multiple agents/sessions), sync frequently
-- After major discoveries, consider if other sessions need to sync
-- Use explicit sync rather than automatic - maintains clarity and control
-
-**Sync command:**
-```
-kg_read()  // Fetches latest from MCP server
-```
-
-Or ask: "Sync the knowledge graph" / "Check for knowledge updates"
-
-## Multi-Agent Collaboration
-
-**Subagent coordination:**
-- When spawning subagents needing domain knowledge, include: "First call kg_read to load knowledge graph"
-- For simple tasks (file operations, searches), skip graph load
-- Subagent changes immediately visible to parent via shared MCP server
-- Parent can sync after subagent completes to review contributions
+**When spawning subagents:**
+- For domain tasks needing context: "First call kg_read to load knowledge graph"
+- For simple operations (file ops, searches): Skip graph load
+- Subagent writes are immediately visible to parent via shared MCP server
+- After subagent completes: call `kg_sync` to see what they discovered
 
 **Session coordination:**
 - All sessions connect to same MCP server (single source of truth)
-- Changes are immediately visible to all connected sessions
-- Explicit `kg_read()` fetches latest state into your context
+- Changes immediately visible to all connected sessions
+- Explicit `kg_sync()` fetches latest into your context, excluding your own writes
 
+## Conflict Resolution
 
-## Prunning
+**Last write wins.** Mitigated by:
+- Pull-before-push discipline
+- LLM reconsideration after sync
+- Small atomic entries reduce conflict surface
+- Frequent syncs in collaborative scenarios
 
-- update nodes and edges that are outdated, but partially valid
-- delete nodes or edges that are no longer valid
+## Pruning
+
+- Update nodes and edges that are outdated but partially valid
+- Delete nodes or edges that are no longer valid
+- Prefer updating over deleting when in doubt
