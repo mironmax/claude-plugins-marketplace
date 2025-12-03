@@ -64,4 +64,4 @@ When spawning subagents that need domain knowledge:
 - User-level: cross-project wisdom; Project-level: codebase-specific knowledge
 - Capture imperfectly rather than lose understanding
 
-For detailed structure and examples: `/skill knowledge-graph`
+For detailed structure and examples: `/skill memory`

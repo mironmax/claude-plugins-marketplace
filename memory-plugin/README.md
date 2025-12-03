@@ -40,14 +40,17 @@ The plugin automatically:
 ### Manual Installation
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/mironmax/knowledge-graph-plugin.git ~/.claude/plugins/knowledge-graph
+# 1. Clone the marketplace repository
+git clone https://github.com/mironmax/claude-plugins-marketplace.git /tmp/claude-marketplace
 
-# 2. Add CLAUDE.md instructions to your config
-# Append content from ~/.claude/plugins/knowledge-graph/templates/CLAUDE.md
+# 2. Copy the plugin to Claude Code plugins directory
+cp -r /tmp/claude-marketplace/memory-plugin ~/.claude/plugins/memory
+
+# 3. Add CLAUDE.md instructions to your config
+# Append content from ~/.claude/plugins/memory/templates/CLAUDE.md
 # to ~/.claude/CLAUDE.md (create if it doesn't exist)
 
-# 3. Restart Claude Code
+# 4. Restart Claude Code
 ```
 
 ## Quick Start
@@ -127,7 +130,7 @@ When spawning: "First call kg_read to load knowledge graph"
 ### Commands
 
 - `/kg-sync` - Sync latest updates from other sessions
-- `/skill knowledge-graph` - Detailed documentation
+- `/skill memory` - Detailed documentation
 
 ### When to Capture
 
@@ -236,16 +239,16 @@ Set in MCP configuration:
   - Tells Claude to load knowledge graph at session start
   - Enables automatic session registration
   - Must be manually copied after installation
-- **Detailed guide**: `/skill knowledge-graph` - In-depth usage and examples
+- **Detailed guide**: `/skill memory` - In-depth usage and examples
 - **This README**: Overview, installation, and quick start
 
 ## Uninstallation
 
 ```bash
-~/.claude/plugins/knowledge-graph/scripts/uninstall.sh
+/plugin uninstall memory@maxim-plugins
 ```
 
-Optionally preserves your knowledge graph data.
+Your knowledge graph data will be preserved in `~/.claude/knowledge/` and `.knowledge/`.
 
 ## Development
 
@@ -271,7 +274,7 @@ MIT License - see [LICENSE](LICENSE) file
 
 ## Version
 
-0.3.0-beta
+0.3.0
 
 **Changes in 0.3.0:**
 - Simplified `kg_read()` API (removed optional level parameter)

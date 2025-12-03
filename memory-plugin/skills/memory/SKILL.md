@@ -1,5 +1,5 @@
 ---
-name: knowledge-graph
+name: memory
 description: Extract and remember required knowledge from any conversations
 ---
 
