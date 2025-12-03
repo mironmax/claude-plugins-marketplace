@@ -64,4 +64,26 @@ When spawning subagents that need domain knowledge:
 - User-level: cross-project wisdom; Project-level: codebase-specific knowledge
 - Capture imperfectly rather than lose understanding
 
+## Auto-Compaction
+
+The knowledge graph automatically manages its size to stay within context window limits:
+
+**How it works:**
+- Low-value nodes are archived when the graph exceeds the token limit (default: 5000 tokens)
+- Archived nodes remain on disk but hidden from `kg_read()` and `kg_sync()`
+- Edges to archived nodes remain visible as "memory traces" - you'll see relationships pointing to nodes not in your view
+- Nodes created/modified in the current session are protected from archiving
+
+**Value scoring:**
+Nodes are scored based on:
+- Recency (exponential decay, half-life 7 days)
+- Connectedness (edge count + touches)
+- Richness (content length)
+
+**Retrieving archived nodes:**
+When you see an edge pointing to a missing node, use `kg_recall(level, id)` to bring it back into active context.
+
+**Orphan cleanup:**
+Archived nodes with no connections to active nodes are deleted after a grace period (default: 7 days).
+
 For detailed structure and examples: `/skill memory`

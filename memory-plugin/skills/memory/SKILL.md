@@ -117,6 +117,16 @@ kg_delete_node(level="user", id="node-id")
 kg_delete_edge(level="project", from="a", to="b", rel="depends-on")
 ```
 
+### Recall Archived Nodes
+
+When you see edges pointing to nodes not in your current view (archived nodes):
+
+```
+kg_recall(level="user", id="node-id")
+```
+
+Brings the archived node back into active context. The node is immediately visible in subsequent reads and syncs.
+
 ## Principles
 
 - Prefer edges over nodes
@@ -147,8 +157,47 @@ kg_delete_edge(level="project", from="a", to="b", rel="depends-on")
 - Small atomic entries reduce conflict surface
 - Frequent syncs in collaborative scenarios
 
-## Pruning
+## Auto-Compaction & Archiving
 
-- Update nodes and edges that are outdated but partially valid
-- Delete nodes or edges that are no longer valid
-- Prefer updating over deleting when in doubt
+The knowledge graph automatically manages its size to stay within context window limits:
+
+### How It Works
+
+- **Token limit:** Default 5000 tokens (configurable via `KG_MAX_TOKENS`)
+- **Automatic archiving:** When over limit, lowest-scored nodes are archived
+- **Session protection:** Nodes created/modified in current session never archived
+- **Persistent storage:** Archived nodes remain on disk, just hidden from reads
+- **Memory traces:** Edges to archived nodes remain visible - you'll see relationships pointing to missing nodes
+- **Manual recall:** Use `kg_recall(level, id)` to bring archived nodes back
+
+### Node Scoring
+
+Nodes are scored by multiplying three factors:
+
+1. **Recency:** Exponential decay, half-life 7 days (`2^(-age_days/7)`)
+2. **Connectedness:** Log scale based on edge count + touches (`1 + log(1 + edges + touches)`)
+3. **Richness:** Content investment (`1 + log(1 + gist_length + notes_length)`)
+
+Higher score = more valuable = kept longer.
+
+### Orphan Cleanup
+
+- Archived nodes with no connections to active nodes are "orphaned"
+- After grace period (default 7 days, configurable via `KG_ORPHAN_GRACE_DAYS`), orphans are permanently deleted
+- Reconnecting an orphaned node (e.g., via recall or new edge) clears its orphan timer
+
+### Typical Flow
+
+1. Graph grows beyond 5000 tokens
+2. System archives lowest-scored nodes until under 4500 tokens (90% of limit)
+3. You see edges pointing to archived nodes
+4. Call `kg_recall(level, id)` if you need one back
+5. Recalled node gets fresh timestamp, protected from immediate re-archive
+
+### Manual Pruning
+
+Still use delete operations for truly invalid knowledge:
+
+- `kg_delete_node()` - Remove incorrect or obsolete nodes
+- `kg_delete_edge()` - Remove incorrect relationships
+- Prefer updating over deleting when knowledge is partially valid

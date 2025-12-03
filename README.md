@@ -10,10 +10,12 @@ Extract and remember patterns, insights, and relationships worth preserving acro
 **Features:**
 - 🧠 Capture knowledge as you work
 - ⚡ Fast in-memory operations (persistent MCP server)
-- 🔄 Session tracking with diff-based sync (v1.1.0)
+- 🔄 Session tracking with diff-based sync
 - 🤝 Real-time multi-session collaboration
 - 🎯 User & Project level knowledge separation
 - 📝 Immediate capture with conflict resolution
+- 🗜️ Auto-compaction to manage context window size
+- ♻️ Smart archiving with recoverable nodes
 
 **Location:** `memory-plugin/` in this marketplace repository
 
