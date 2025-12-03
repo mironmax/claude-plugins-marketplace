@@ -276,8 +276,8 @@ class KnowledgeGraphStore:
             # Track version
             self._bump_version(level, self._version_key_node(node_id), session_id)
             self.dirty[level] = True
-            
-            logger.info(f"{action.capitalize()} node '{node_id}' in {level} graph")
+
+            logger.debug(f"{action.capitalize()} node '{node_id}' in {level} graph")
             return {"action": action, "node": node}
 
     def put_edge(self, level: str, from_ref: str, to_ref: str, rel: str,
@@ -305,11 +305,11 @@ class KnowledgeGraphStore:
             # Track version
             self._bump_version(level, self._version_key_edge(from_ref, to_ref, rel), session_id)
             self.dirty[level] = True
-            
-            logger.info(f"{action.capitalize()} edge '{from_ref}' -> '{to_ref}' ({rel}) in {level} graph")
+
+            logger.debug(f"{action.capitalize()} edge '{from_ref}' -> '{to_ref}' ({rel}) in {level} graph")
             return {"action": action, "edge": edge}
 
-    def delete_node(self, level: str, node_id: str, session_id: Optional[str] = None) -> dict:
+    def delete_node(self, level: str, node_id: str) -> dict:
         """Delete a node."""
         with self.lock:
             idx = self._node_index[level].get(node_id)
@@ -330,12 +330,11 @@ class KnowledgeGraphStore:
                     del self._versions[level][key]
 
                 self.dirty[level] = True
-                logger.info(f"Deleted node '{node_id}' from {level} graph")
+                logger.debug(f"Deleted node '{node_id}' from {level} graph")
                 return {"deleted": True, "node_id": node_id}
             return {"deleted": False, "node_id": node_id}
 
-    def delete_edge(self, level: str, from_ref: str, to_ref: str, rel: str,
-                    session_id: Optional[str] = None) -> dict:
+    def delete_edge(self, level: str, from_ref: str, to_ref: str, rel: str) -> dict:
         """Delete an edge."""
         with self.lock:
             edge_key = (from_ref, to_ref, rel)
@@ -357,7 +356,7 @@ class KnowledgeGraphStore:
                     del self._versions[level][key]
 
                 self.dirty[level] = True
-                logger.info(f"Deleted edge '{from_ref}' -> '{to_ref}' ({rel}) from {level} graph")
+                logger.debug(f"Deleted edge '{from_ref}' -> '{to_ref}' ({rel}) from {level} graph")
                 return {"deleted": True, "edge": {"from": from_ref, "to": to_ref, "rel": rel}}
             return {"deleted": False, "edge": {"from": from_ref, "to": to_ref, "rel": rel}}
 
@@ -452,8 +451,7 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "level": {"type": "string", "enum": ["user", "project"]},
-                    "id": {"type": "string", "description": "Node ID to delete"},
-                    "session_id": {"type": "string", "description": "Optional: your session ID"}
+                    "id": {"type": "string", "description": "Node ID to delete"}
                 },
                 "required": ["level", "id"]
             }
@@ -467,8 +465,7 @@ async def list_tools() -> list[Tool]:
                     "level": {"type": "string", "enum": ["user", "project"]},
                     "from": {"type": "string"},
                     "to": {"type": "string"},
-                    "rel": {"type": "string"},
-                    "session_id": {"type": "string", "description": "Optional: your session ID"}
+                    "rel": {"type": "string"}
                 },
                 "required": ["level", "from", "to", "rel"]
             }
@@ -531,8 +528,7 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
         elif name == "kg_delete_node":
             result = store.delete_node(
                 arguments["level"],
-                arguments["id"],
-                arguments.get("session_id")
+                arguments["id"]
             )
             return [TextContent(type="text", text=json.dumps(result))]
 
@@ -541,8 +537,7 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                 arguments["level"],
                 arguments["from"],
                 arguments["to"],
-                arguments["rel"],
-                arguments.get("session_id")
+                arguments["rel"]
             )
             return [TextContent(type="text", text=json.dumps(result))]
 

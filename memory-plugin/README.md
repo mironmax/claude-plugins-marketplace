@@ -37,31 +37,13 @@ The plugin automatically:
 
 **Important:** The `CLAUDE.md` template contains instructions for Claude to automatically load and use the knowledge graph. If you already have `~/.claude/CLAUDE.md`, append the template content instead of overwriting. Without these instructions, you'll need to manually call `kg_read()` at the start of each session.
 
-### Manual Installation
-
-```bash
-# 1. Clone the marketplace repository
-git clone https://github.com/mironmax/claude-plugins-marketplace.git /tmp/claude-marketplace
-
-# 2. Copy the plugin to Claude Code plugins directory
-cp -r /tmp/claude-marketplace/memory-plugin ~/.claude/plugins/memory
-
-# 3. Add CLAUDE.md instructions to your config
-# Append content from ~/.claude/plugins/memory/templates/CLAUDE.md
-# to ~/.claude/CLAUDE.md (create if it doesn't exist)
-
-# 4. Restart Claude Code
-```
-
 ## Quick Start
 
-Once installed with `CLAUDE.md` template, the knowledge graph automatically:
-1. Loads at session start via `kg_read()`
-2. Registers session via `kg_register_session()` for sync tracking
+Once installed with `CLAUDE.md` template, the knowledge graph loads automatically at session start.
 
-### Optional: Enable Auto-Approval
+### Enable Auto-Approval (Optional)
 
-To avoid permission prompts for memory plugin tools, add to `~/.claude/settings.json`:
+To avoid permission prompts, add to `~/.claude/settings.json`:
 
 ```json
 {
@@ -79,41 +61,9 @@ To avoid permission prompts for memory plugin tools, add to `~/.claude/settings.
 }
 ```
 
-This applies globally to all projects. Create the file if it doesn't exist. Without this, Claude will ask for approval on first use of each tool.
+This applies globally to all projects. Without this, Claude will ask for approval on first use of each tool.
 
-**Capture knowledge immediately:**
-```javascript
-// When you discover a pattern
-kg_put_node(
-  level="user",
-  id="prefer-composition",
-  gist="Prefer composition over inheritance in Python",
-  notes=["Increases flexibility and testability"]
-)
-
-// When you find a relationship
-kg_put_edge(
-  level="project",
-  from="config.py",
-  to="main.py",
-  rel="must-load-before",
-  notes=["Config needs to initialize before main runs"]
-)
-```
-
-**Sync to see changes from other sessions/agents:**
-```javascript
-// Pull latest updates before important decisions
-kg_sync(session_id="your-session-id")
-
-// Or use the slash command
-/kg-sync
-```
-
-**For subagents needing domain knowledge:**
-```
-When spawning: "First call kg_read to load knowledge graph"
-```
+For detailed usage examples and best practices, run `/skill memory`.
 
 ## Usage
 
@@ -173,56 +123,11 @@ MCP Server (stdio transport)
 - Diff-based sync (returns only changes, not full graph)
 - No Python startup overhead (persistent MCP server)
 
-## Conflict Resolution
-
-**Last write wins** - sync frequently when collaborating:
-- Before important decisions: `/kg-sync`
-- When running multiple parallel sessions
-- After spawning subagents that may have contributed
-
 ## Multi-Session Collaboration
 
-The knowledge graph supports real-time collaboration across parallel sessions using session tracking and diff-based sync.
+The knowledge graph supports real-time collaboration across parallel sessions using session tracking and diff-based sync. All sessions share the same MCP server, and changes are visible via `kg_sync()`.
 
-### How It Works
-
-**Session Tracking (v1.1.0+):**
-1. Each session registers via `kg_register_session()` → receives unique `session_id`
-2. All writes track: version number, timestamp, and originating session
-3. `kg_sync(session_id)` returns **only changes** since that session started
-4. Metadata stored server-side, never sent to LLM (memory-efficient)
-
-**Example - Parallel Sessions Workflow:**
-```javascript
-// Session A (Terminal 1)
-kg_register_session()  // → {session_id: "abc123", start_ts: 1234567890}
-
-// Meanwhile, Session B (Terminal 2) writes:
-// node-1, node-2, edge-1
-
-// Session A syncs to see B's changes
-kg_sync("abc123")
-// Returns: {total_changes: 3, changes: {nodes: [node-1, node-2], edges: [edge-1]}}
-// Only diffs, not full graph!
-```
-
-### Use Cases
-
-**Parallel Sessions:**
-- Run multiple Claude Code instances simultaneously
-- All sessions share the same MCP server
-- Changes from any session visible to others via `kg_sync()`
-- Common when working on related tasks in parallel
-
-**Subagent Coordination:**
-- Include "First call kg_read to load knowledge graph" when spawning for domain tasks
-- Skip for simple operations (grep, file ops)
-- Subagent writes immediately visible to parent via `kg_sync()`
-
-**Best Practices:**
-- Call `kg_sync()` before important decisions to pull latest updates
-- Last write wins - sync frequently when collaborating
-- Each session maintains its own view until explicit sync
+**Last write wins** - sync frequently when collaborating. Use `/kg-sync` or `/skill memory` for details.
 
 ## Configuration
 
@@ -274,7 +179,11 @@ MIT License - see [LICENSE](LICENSE) file
 
 ## Version
 
-0.3.0
+0.3.1
+
+**Changes in 0.3.1:**
+- Performance improvements and consistency fixes
+- Improved logging and operational efficiency
 
 **Changes in 0.3.0:**
 - Simplified `kg_read()` API (removed optional level parameter)

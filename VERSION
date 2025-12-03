@@ -1,0 +1,14 @@
+0.3.1
+
+When bumping version, update in these files:
+==============================================
+
+1. VERSION (this file)
+2. memory-plugin/.claude-plugin/plugin.json
+3. .claude-plugin/marketplace.json
+4. memory-plugin/README.md (## Version section + add changelog entry)
+
+Format: semantic versioning (MAJOR.MINOR.PATCH)
+- MAJOR: Breaking changes
+- MINOR: New features, backward compatible
+- PATCH: Bug fixes, improvements
