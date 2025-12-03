@@ -4,17 +4,18 @@ A collection of Claude Code plugins for enhanced development workflows.
 
 ## Available Plugins
 
-### Knowledge Graph
+### Memory (Knowledge Graph)
 Extract and remember patterns, insights, and relationships worth preserving across sessions.
 
 **Features:**
 - 🧠 Capture knowledge as you work
-- ⚡ Sub-millisecond operations (in-memory MCP server)
-- 🔄 Git-style sync for multi-agent collaboration
+- ⚡ Fast in-memory operations (persistent MCP server)
+- 🔄 Session tracking with diff-based sync (v1.1.0)
+- 🤝 Real-time multi-session collaboration
 - 🎯 User & Project level knowledge separation
 - 📝 Immediate capture with conflict resolution
 
-**Repository:** [knowledge-graph-plugin](https://github.com/mironmax/knowledge-graph-plugin)
+**Location:** `memory-plugin/` in this marketplace repository
 
 ## Installation
 
@@ -27,21 +28,23 @@ Extract and remember patterns, insights, and relationships worth preserving acro
 ### 2. Install Plugins
 
 ```
-/plugin install knowledge-graph@maxim-plugins
+/plugin install memory@maxim-plugins
 ```
 
-### 3. Run Plugin Setup
+### 3. Enable Auto-Loading (Important!)
 
-After installation, each plugin requires its setup script to be run:
+Add the knowledge graph instructions to your Claude configuration:
 
 ```bash
-# For knowledge-graph plugin:
-~/DevProj/knowledge-graph-plugin/scripts/install.sh
+# If you don't have ~/.claude/CLAUDE.md yet:
+cp ~/.claude/plugins/memory/templates/CLAUDE.md ~/.claude/CLAUDE.md
 
-# Then follow the prompts to configure the MCP server
+# If you already have ~/.claude/CLAUDE.md:
+# Manually append the content from ~/.claude/plugins/memory/templates/CLAUDE.md
+# to your existing file
 ```
 
-**Note:** Plugin install clones the repository but doesn't run setup automatically for security reasons.
+**Why this matters:** The template contains instructions that tell Claude to automatically load the knowledge graph at session start and register for sync tracking. Without it, you'll need to manually call tools each session.
 
 ### 4. Restart Claude Code
 

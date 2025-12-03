@@ -146,14 +146,9 @@ class KnowledgeGraphStore:
             logger.info(f"Session registered: {session_id}")
             return {"session_id": session_id, "start_ts": ts}
 
-    def read(self, level: Optional[str] = None) -> dict:
-        """Read graph(s). If level is None, return both. Never includes _meta."""
+    def read(self) -> dict:
+        """Read both graphs (user and project). Never includes _meta."""
         with self.lock:
-            if level:
-                return {
-                    "nodes": self.graphs[level]["nodes"].copy(),
-                    "edges": self.graphs[level]["edges"].copy()
-                }
             return {
                 "user": {
                     "nodes": self.graphs["user"]["nodes"].copy(),
@@ -334,13 +329,7 @@ async def list_tools() -> list[Tool]:
             description="Read the full knowledge graph. Use at session start or when you need complete context. Returns both user and project graphs.",
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "level": {
-                        "type": "string",
-                        "enum": ["user", "project"],
-                        "description": "Optional: specific level to read. If omitted, returns both."
-                    }
-                }
+                "properties": {}
             }
         ),
         Tool(
@@ -435,8 +424,7 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
 
     try:
         if name == "kg_read":
-            level = arguments.get("level")
-            result = store.read(level)
+            result = store.read()
             return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
         elif name == "kg_register_session":
