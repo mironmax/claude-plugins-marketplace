@@ -11,6 +11,12 @@ Extract and remember patterns, insights, and relationships worth preserving acro
 - 🗜️ **Auto-Compaction** — Automatically manages context window size
 - ♻️ **Memory Traces** — Archived knowledge remains discoverable
 
+## Important notes
+
+Most of the time system works out of the box. But one useful pattern is this:
+1. Do not go for context compaction, it is wasteful, I think. Instead try to finish session with some tangible result, like completing task altogether or writing transient results into. Then clear the session and start anew, now reading this file as input.
+2. Before the end of each session, explicitly say that you are wrapping up the session. That would often trigger some additional memory writes. But also take a few minutes for reflection what was working and what's not. This helps to create some overarching learning.
+
 ## Installation
 
 ### Via Marketplace
@@ -33,7 +39,9 @@ cp ~/.claude/plugins/memory/templates/CLAUDE.md ~/.claude/CLAUDE.md
 
 ### Enable Auto-Approval (Optional)
 
-Add to `~/.claude/settings.json` to skip permission prompts:
+To skip permission prompts, add these permissions to your `~/.claude/settings.json`:
+
+**If you don't have a settings.json yet**, create it with:
 
 ```json
 {
@@ -51,6 +59,29 @@ Add to `~/.claude/settings.json` to skip permission prompts:
   }
 }
 ```
+
+**If you already have a settings.json**, add the permissions to your existing `permissions.allow` array:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      // ... your existing permissions ...
+      "mcp__plugin_memory_kg__kg_read",
+      "mcp__plugin_memory_kg__kg_register_session",
+      "mcp__plugin_memory_kg__kg_put_node",
+      "mcp__plugin_memory_kg__kg_put_edge",
+      "mcp__plugin_memory_kg__kg_sync",
+      "mcp__plugin_memory_kg__kg_delete_node",
+      "mcp__plugin_memory_kg__kg_delete_edge",
+      "mcp__plugin_memory_kg__kg_recall"
+    ],
+    "deny": [/* ... your existing denies ... */]
+  }
+}
+```
+
+⚠️ **Important**: Don't append the entire JSON object if you already have settings — merge the permissions into your existing `allow` array to avoid JSON syntax errors.
 
 ## Usage
 
@@ -76,6 +107,42 @@ Edit `~/.claude/plugins/memory/.mcp.json` to customize:
 
 - **User level:** `~/.claude/knowledge/user.json` — Cross-project knowledge, never shared
 - **Project level:** `.knowledge/graph.json` — Codebase-specific, shareable via git
+
+## Backup and Recovery
+
+The plugin automatically creates tiered backups to protect against data corruption or accidental changes:
+
+### Backup Tiers
+
+1. **Recent backups** (3 copies) — `.json.bak.1`, `.bak.2`, `.bak.3`
+   - Created hourly (minimum 1 hour between backups)
+   - Most recent snapshots
+
+2. **Daily backups** (7 copies) — `.json.bak.daily.1` through `.bak.daily.7`
+   - One backup per day, kept for 7 days
+   - Provides coverage for recent changes
+
+3. **Weekly backups** (4 copies) — `.json.bak.weekly.1` through `.bak.weekly.4`
+   - One backup per week, kept for 4 weeks
+   - Long-term recovery option
+
+### Recovery
+
+If you need to restore from a backup:
+
+```bash
+# For user-level graph:
+cp ~/.claude/knowledge/user.json.bak.1 ~/.claude/knowledge/user.json
+
+# For project-level graph:
+cp .knowledge/graph.json.bak.daily.3 .knowledge/graph.json
+```
+
+Choose the appropriate backup tier based on when the corruption occurred. The plugin will automatically reload on next session.
+
+### Atomic Writes
+
+All saves use atomic writes (write-to-temp, then rename) to prevent corruption from interrupted writes.
 
 ## Uninstallation
 

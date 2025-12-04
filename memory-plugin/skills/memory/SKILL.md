@@ -7,7 +7,9 @@ description: Extract and remember knowledge across sessions
 
 ## Concept
 
-The knowledge graph captures patterns, insights, and relationships worth remembering. Each entry should be atomic and linkable. The goal: maximum recovered insight per added symbol.
+The knowledge graph captures patterns, insights, and relationships worth remembering, **prioritizing deep 
+learning over trivial facts**. Each entry should be atomic and linkable. The goal: maximum recovered insight
+per added symbol, with special value on meta that speeds up future work.
 
 Two entry types:
 
@@ -33,6 +35,17 @@ Two entry types:
 
 Use short descriptive kebab-case for `id` and `rel`. Reference artifacts directly by path or path:line — no need to wrap them in nodes.
 
+```json
+{
+  "from": "stage2-profile-building",
+  "to": "ARCHITECTURE.md:157-226",
+  "rel": "defined-in",
+  "notes": ["multi source enrichment, creating detailed profiles"]
+}
+```
+
+Not every fact needs remembering, sometimes it's enough to create a pointer like path:line to artefact.
+
 The `touches` field is for light, tentative references — when you sense relevance but the relationship isn't crisp enough to be an edge yet.
 
 The `notes` field holds caveats, rationale, open questions, or any other context. Optional on both edges and nodes.
@@ -42,25 +55,30 @@ The `notes` field holds caveats, rationale, open questions, or any other context
 3. Add notes when creating node or edge does not make sense.
 4. Add touches, to mark things that may evolve
 
-
 Compress the meaning: use entries as short as possible while retaining maximum information, in a way humans can reconstruct fluently. Maximum recovered insight per added symbol.
 
-## Levels
+## What to capture:
 
-**User level** (`~/.claude/knowledge/user.json`):
-- Cross-project patterns
-- Personal preferences and heuristics
-- Reusable concepts
-- Never shared
+**Tactical (project-level):**
+- General pointers and valuable refences
+- Code patterns and relationships
+- Decisions, rationales, expectations, purposes
+- Bug fixes, workarounds, approaches, focus points
 
-**Project level** (`.knowledge/graph.json`):
-- Codebase-specific relationships
-- Project decisions and rationales
-- Local conventions
-- Shareable via git
+**Strategic (user-level - prioritize these):**
+- **Process breakdowns** — Why did an approach fail? What was the wrong assumption?
+- **Interaction patterns** — When user says X, it means Y
+- **Meta-cognitive traps** — "I tend to do X when I should do Y"
+- **Architectural principles** — Deep patterns that apply across projects
+  - Example: "Agentic pipelines need data contracts" (not just "this pipeline had parsing issues")
+- **Confusion patterns** — "When confused about data location, trace don't search"
 
-Test: "Would this make sense to a teammate who cloned the repo?" → Project. Otherwise → User.
+Test: "Would this help me avoid a similar mistake/inefficiency/pitfall in a different situation next time?" → Capture it at user level.
 
+Compression rule still applies, but **favor depth over breadth**.
+Better: One architectural generalisation
+Worse: Ten tactical file-path fixes
+  
 ## API Reference
 
 ### Reading
@@ -163,7 +181,7 @@ If you need to preserve a node, update it occasionally or connect it to active k
 
 ## Multi-Session Collaboration
 
-All sessions share the same MCP server. Changes are eventually shared between with each write and sync.
+All sessions share the same MCP server. Changes are eventually shared between them with each write and sync.
 
 ### Workflow
 
@@ -184,7 +202,7 @@ When spawning subagents/tasks that need domain context:
 - Include: "First call kg_read to load knowledge graph"
 - Skip for simple tasks (file ops, searches) — unnecessary context
 
-Subagent writes are visible to parent via shared server (eventually). After subagent completes, parent can `kg_sync` to see discoveries.
+Subagent writes are visible to parent via shared server (eventually). After subagent completes, parent can `kg_sync` to see written discoveries.
 
 ## Examples
 
@@ -221,6 +239,28 @@ kg_recall(level="project", id="old-security-decision")
 ```
 
 Now you have context for why auth works the way it does.
+
+## Depth Hierarchy
+
+When capturing, prioritize by abstraction level:
+
+**Level 1: Facts** (low priority)
+- if fact can be recovered from artefacts keep pointers
+
+**Level 2: Patterns** (medium priority)
+- note when user ppromts to do something deliberately
+- do not assume that implemented code patterns are all deliberate, ask
+
+**Level 3: Principles** (high priority)
+- when user specifically spells out how to approach things, note, generalise, widen
+
+**Level 4: Meta-patterns** (highest priority)
+- "I get confused about data location when..."
+- "User says 'focus' when I'm too scattered"
+- Capture these as corrections to your own behavior
+- require regular self-reflection
+
+The graph should accumulate wisdom, not only facts. Wisdom should be useful, practical and beneficial for future work.
 
 ## Best Practices
 

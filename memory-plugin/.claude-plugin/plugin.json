@@ -1,6 +1,6 @@
 {
   "name": "memory",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Extract and remember patterns, insights, and relationships worth preserving across sessions. Fast in-memory MCP server with auto-compaction and real-time multi-session collaboration.",
   "author": {
     "name": "Maxim",

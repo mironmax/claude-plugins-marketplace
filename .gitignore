@@ -1,2 +1,4 @@
 # Knowledge graph data (session-specific)
 .knowledge/
+
+.claude/

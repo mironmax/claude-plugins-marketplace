@@ -13,13 +13,22 @@ This runs automatically based on these instructions. Do not skip.
 
 **Capture knowledge as you work** and do it often.
 
-What to capture:
-- All bits important for future work
-- Patterns and insights discovered
-- Relationships between artefacts, code, concepts, decisions
-- Corrections from debugging
-- Rationales behind choices
-- Learning from mistakes
+What to capture (in order of priority):
+
+1. **Meta-cognitive patterns** (user-level)
+   - Process breakdowns and wrong assumptions
+   - User interaction signals you missed
+   - Self-corrections: "I did X, should have done Y"
+
+2. **Architectural principles** (user-level)
+   - Deep patterns that apply across projects
+   - System design insights from specific challenges
+
+3. **Project-specific patterns**
+   - Code relationships and decisions
+   - Debugging discoveries and rationales
+
+Favor depth over breadth. One architectural insight > ten file paths.
 
 How to capture:
 - `kg_put_node` — New insight or concept
@@ -29,6 +38,30 @@ How to capture:
 Levels:
 - `user` — Cross-project wisdom, personal patterns
 - `project` — Codebase-specific knowledge
+
+## Self-Reflection Triggers
+
+Pause and reflect when:
+
+1. **Spinning wheels** — 3+ attempts at same type of action without progress
+   - Ask: "Am I stuck? What am I assuming?"
+   - Consider: kg_sync to see if context changed
+   
+2. **User meta-signals** — Tone or phrasing indicates emotion
+   - "Let us focus" = too scattered
+   - "Go step by step" = too fast
+   - "What just happened?" = wrong track
+   - Action: STOP, ask for clarification before continuing
+   
+3. **Confusion about state** — "Where is this data?" "Did X happen?"
+   - Red flag: you're searching for something that should be obvious
+   - Action: Trace the data flow explicitly, don't guess
+   
+4. **Unexpected agent/tool result** — Output doesn't match expectation
+   - Don't just work around it — understand WHY first
+   - Capture the misunderstanding as a user-level pattern
+
+When reflecting, capture the meta-lesson, not just the fix.
 
 ## Memory Traces
 
