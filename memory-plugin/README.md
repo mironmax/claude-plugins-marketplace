@@ -158,9 +158,20 @@ MIT License — see [LICENSE](LICENSE)
 
 ## Version
 
-0.4.0
+0.4.2
 
 ### Changelog
+
+**0.4.2**
+- Fixed backup tier promotion logic (oldest backups now properly promote to next tier)
+- Added session_id tracking to recall() for sync consistency
+- Removed unused helper methods and TypeVar
+- Moved static utility methods to module level for cleaner code
+- Added level validation to all public methods
+- Standardized type hints to use Python 3.10+ `X | None` syntax
+
+**0.4.1**
+- Code refactoring and tiered backup strategy improvements
 
 **0.4.0**
 - Auto-compaction with 7-day grace period

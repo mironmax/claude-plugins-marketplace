@@ -16,7 +16,7 @@ import threading
 import uuid
 import shutil
 from pathlib import Path
-from typing import Any, Optional, Callable, TypeVar
+from typing import Any
 from dataclasses import dataclass
 from typing import TypedDict, NotRequired
 
@@ -339,7 +339,7 @@ class SessionManager:
         logger.info(f"Session registered: {session_id}")
         return {"session_id": session_id, "start_ts": ts}
 
-    def get_start_ts(self, session_id: str) -> Optional[float]:
+    def get_start_ts(self, session_id: str) -> float | None:
         """Get session start timestamp, or None if not found."""
         session = self._sessions.get(session_id)
         return session["start_ts"] if session else None
@@ -420,7 +420,7 @@ class GraphPersistence:
 
             # Convert edges from tuple keys to string keys for JSON
             edges_for_disk = {
-                self._edge_key(e["from"], e["to"], e["rel"]): e
+                edge_storage_key(e["from"], e["to"], e["rel"]): e
                 for e in graph["edges"].values()
             }
 
@@ -485,82 +485,99 @@ class GraphPersistence:
 
         current_time = time.time()
 
-        # === Recent tier rotation ===
-        # Shift recent backups: .bak.2 -> .bak.3, .bak.1 -> .bak.2
+        # Promote oldest recent backup BEFORE rotation
+        oldest_recent = self.path.with_suffix(f".json.bak.{MAX_RECENT_BACKUPS}")
+        if oldest_recent.exists():
+            self._promote_to_daily(oldest_recent, current_time)
+
+        # Shift remaining: .bak.2 -> .bak.3, .bak.1 -> .bak.2
         for i in range(MAX_RECENT_BACKUPS - 1, 0, -1):
             old_backup = self.path.with_suffix(f".json.bak.{i}")
             new_backup = self.path.with_suffix(f".json.bak.{i + 1}")
             if old_backup.exists():
-                if i + 1 <= MAX_RECENT_BACKUPS:
-                    shutil.copy2(old_backup, new_backup)
-                else:
-                    # Last recent backup gets promoted to daily tier
-                    self._promote_to_daily(old_backup, current_time)
+                shutil.copy2(old_backup, new_backup)
 
-        # Create new .bak.1 from current file
-        backup_1 = self.path.with_suffix(".json.bak.1")
-        shutil.copy2(self.path, backup_1)
-        logger.debug(f"Created recent backup: {backup_1}")
+        # Create new .bak.1
+        shutil.copy2(self.path, self.path.with_suffix(".json.bak.1"))
+        logger.debug(f"Created recent backup: {self.path.with_suffix('.json.bak.1')}")
 
     def _promote_to_daily(self, source: Path, current_time: float):
         """Promote a recent backup to daily tier if a day has passed."""
-        # Check if we need a new daily backup
         daily_1 = self.path.with_suffix(".json.bak.daily.1")
 
         if daily_1.exists():
             age_days = (current_time - daily_1.stat().st_mtime) / (24 * 60 * 60)
             if age_days < 1.0:
-                return  # Not a day yet
+                return
 
-        # Rotate daily backups
+        # Promote oldest daily BEFORE rotation
+        oldest_daily = self.path.with_suffix(f".json.bak.daily.{MAX_DAILY_BACKUPS}")
+        if oldest_daily.exists():
+            self._promote_to_weekly(oldest_daily, current_time)
+
+        # Shift remaining
         for i in range(MAX_DAILY_BACKUPS - 1, 0, -1):
             old_daily = self.path.with_suffix(f".json.bak.daily.{i}")
             new_daily = self.path.with_suffix(f".json.bak.daily.{i + 1}")
             if old_daily.exists():
-                if i + 1 <= MAX_DAILY_BACKUPS:
-                    shutil.copy2(old_daily, new_daily)
-                else:
-                    # Last daily backup gets promoted to weekly tier
-                    self._promote_to_weekly(old_daily, current_time)
+                shutil.copy2(old_daily, new_daily)
 
-        # Promote to daily.1
         shutil.copy2(source, daily_1)
         logger.debug(f"Promoted to daily backup: {daily_1}")
 
     def _promote_to_weekly(self, source: Path, current_time: float):
         """Promote a daily backup to weekly tier if a week has passed."""
-        # Check if we need a new weekly backup
         weekly_1 = self.path.with_suffix(".json.bak.weekly.1")
 
         if weekly_1.exists():
             age_weeks = (current_time - weekly_1.stat().st_mtime) / (7 * 24 * 60 * 60)
             if age_weeks < 1.0:
-                return  # Not a week yet
+                return
 
-        # Rotate weekly backups
+        # Shift (oldest drops off naturally)
         for i in range(MAX_WEEKLY_BACKUPS - 1, 0, -1):
             old_weekly = self.path.with_suffix(f".json.bak.weekly.{i}")
             new_weekly = self.path.with_suffix(f".json.bak.weekly.{i + 1}")
             if old_weekly.exists():
-                if i + 1 <= MAX_WEEKLY_BACKUPS:
-                    shutil.copy2(old_weekly, new_weekly)
-                # Oldest weekly backup just gets overwritten/dropped
+                shutil.copy2(old_weekly, new_weekly)
 
-        # Promote to weekly.1
         shutil.copy2(source, weekly_1)
         logger.debug(f"Promoted to weekly backup: {weekly_1}")
 
-    @staticmethod
-    def _edge_key(from_ref: str, to_ref: str, rel: str) -> str:
-        """Generate string key for edge storage."""
-        return f"{from_ref}->{to_ref}:{rel}"
+
+# ============================================================================
+# Module-Level Utilities
+# ============================================================================
+
+def is_archived(node: dict) -> bool:
+    """Check if a node is archived."""
+    return node.get("_archived", False)
+
+
+def version_key_node(node_id: str) -> str:
+    """Generate version key for a node."""
+    return f"node:{node_id}"
+
+
+def version_key_edge(from_ref: str, to_ref: str, rel: str) -> str:
+    """Generate version key for an edge."""
+    return f"edge:{from_ref}->{to_ref}:{rel}"
+
+
+def edge_storage_key(from_ref: str, to_ref: str, rel: str) -> str:
+    """Generate string key for edge storage."""
+    return f"{from_ref}->{to_ref}:{rel}"
+
+
+def validate_level(level: str):
+    """Validate level parameter. Raises KGError if invalid."""
+    if level not in LEVELS:
+        raise KGError(f"Invalid level '{level}', must be one of {LEVELS}")
 
 
 # ============================================================================
 # Knowledge Graph Store
 # ============================================================================
-
-T = TypeVar('T')
 
 
 class KnowledgeGraphStore:
@@ -607,43 +624,10 @@ class KnowledgeGraphStore:
         logger.info(f"Knowledge graph initialized")
 
     # ========================================================================
-    # Helper Methods
-    # ========================================================================
-
-    @staticmethod
-    def is_archived(node: dict) -> bool:
-        """Check if a node is archived."""
-        return node.get("_archived", False)
-
-    @staticmethod
-    def node_gist(node: dict) -> str:
-        """Get node gist."""
-        return node.get("gist", "")
-
-    @staticmethod
-    def node_notes(node: dict) -> list[str]:
-        """Get node notes."""
-        return node.get("notes", [])
-
-    def for_each_level(self, fn: Callable[[str], T]) -> dict[str, T]:
-        """Execute function for each level and return results."""
-        return {level: fn(level) for level in LEVELS}
-
-    # ========================================================================
     # Version Management
     # ========================================================================
 
-    @staticmethod
-    def _version_key_node(node_id: str) -> str:
-        """Generate version key for a node."""
-        return f"node:{node_id}"
-
-    @staticmethod
-    def _version_key_edge(from_ref: str, to_ref: str, rel: str) -> str:
-        """Generate version key for an edge."""
-        return f"edge:{from_ref}->{to_ref}:{rel}"
-
-    def _bump_version(self, level: str, key: str, session_id: Optional[str] = None) -> dict:
+    def _bump_version(self, level: str, key: str, session_id: str | None = None) -> dict:
         """Increment version for a key and return new version."""
         ts = time.time()
         current = self._versions[level].get(key, {"v": 0})
@@ -709,7 +693,7 @@ class KnowledgeGraphStore:
         edges = self.graphs[level]["edges"]
 
         # Build set of active node IDs
-        active_ids = {node_id for node_id, node in nodes.items() if not self.is_archived(node)}
+        active_ids = {node_id for node_id, node in nodes.items() if not is_archived(node)}
 
         # Build set of reachable archived nodes (connected to active)
         reachable = set()
@@ -725,7 +709,7 @@ class KnowledgeGraphStore:
         to_delete = []
 
         for node_id, node in nodes.items():
-            if not self.is_archived(node):
+            if not is_archived(node):
                 continue
 
             if node_id in reachable:
@@ -770,7 +754,7 @@ class KnowledgeGraphStore:
             del edges[edge_key]
 
             # Remove version tracking
-            version_key = self._version_key_edge(edge["from"], edge["to"], edge["rel"])
+            version_key = version_key_edge(edge["from"], edge["to"], edge["rel"])
             if version_key in self._versions[level]:
                 del self._versions[level][version_key]
 
@@ -778,7 +762,7 @@ class KnowledgeGraphStore:
         del nodes[node_id]
 
         # Remove version tracking
-        version_key = self._version_key_node(node_id)
+        version_key = version_key_node(node_id)
         if version_key in self._versions[level]:
             del self._versions[level][version_key]
 
@@ -813,7 +797,7 @@ class KnowledgeGraphStore:
                 # Filter active nodes
                 active_nodes = {
                     node_id: node for node_id, node in nodes.items()
-                    if not self.is_archived(node)
+                    if not is_archived(node)
                 }
 
                 active_ids = set(active_nodes.keys())
@@ -848,14 +832,14 @@ class KnowledgeGraphStore:
                 edges = self.graphs[level]["edges"]
 
                 # Active node IDs for filtering
-                active_ids = {node_id for node_id, node in nodes.items() if not self.is_archived(node)}
+                active_ids = {node_id for node_id, node in nodes.items() if not is_archived(node)}
 
                 # Find changed active nodes
                 for node_id, node in nodes.items():
-                    if self.is_archived(node):
+                    if is_archived(node):
                         continue
 
-                    key = self._version_key_node(node_id)
+                    key = version_key_node(node_id)
                     ver = self._versions[level].get(key, {})
 
                     if ver.get("ts", 0) > start_ts:
@@ -868,7 +852,7 @@ class KnowledgeGraphStore:
                     if edge["from"] not in active_ids and edge["to"] not in active_ids:
                         continue
 
-                    key = self._version_key_edge(edge["from"], edge["to"], edge["rel"])
+                    key = version_key_edge(edge["from"], edge["to"], edge["rel"])
                     ver = self._versions[level].get(key, {})
 
                     if ver.get("ts", 0) > start_ts:
@@ -892,9 +876,10 @@ class KnowledgeGraphStore:
     # ========================================================================
 
     def put_node(self, level: str, node_id: str, gist: str,
-                 touches: Optional[list] = None, notes: Optional[list] = None,
-                 session_id: Optional[str] = None) -> dict:
+                 touches: list | None = None, notes: list | None = None,
+                 session_id: str | None = None) -> dict:
         """Add or update a node."""
+        validate_level(level)
         with self.lock:
             nodes = self.graphs[level]["nodes"]
 
@@ -908,15 +893,16 @@ class KnowledgeGraphStore:
             nodes[node_id] = node
 
             # Track version
-            self._bump_version(level, self._version_key_node(node_id), session_id)
+            self._bump_version(level, version_key_node(node_id), session_id)
             self.dirty[level] = True
 
             logger.debug(f"{action.capitalize()} node '{node_id}' in {level} graph")
             return {"action": action, "node": node}
 
     def put_edge(self, level: str, from_ref: str, to_ref: str, rel: str,
-                 notes: Optional[list] = None, session_id: Optional[str] = None) -> dict:
+                 notes: list | None = None, session_id: str | None = None) -> dict:
         """Add or update an edge."""
+        validate_level(level)
         with self.lock:
             edges = self.graphs[level]["edges"]
 
@@ -929,7 +915,7 @@ class KnowledgeGraphStore:
             edges[edge_key] = edge
 
             # Track version
-            self._bump_version(level, self._version_key_edge(from_ref, to_ref, rel), session_id)
+            self._bump_version(level, version_key_edge(from_ref, to_ref, rel), session_id)
             self.dirty[level] = True
 
             logger.debug(f"{action.capitalize()} edge '{from_ref}' -> '{to_ref}' ({rel}) in {level} graph")
@@ -937,6 +923,7 @@ class KnowledgeGraphStore:
 
     def delete_node(self, level: str, node_id: str) -> dict:
         """Delete a node and its connected edges."""
+        validate_level(level)
         with self.lock:
             if node_id not in self.graphs[level]["nodes"]:
                 raise NodeNotFoundError(level, node_id)
@@ -947,6 +934,7 @@ class KnowledgeGraphStore:
 
     def delete_edge(self, level: str, from_ref: str, to_ref: str, rel: str) -> dict:
         """Delete an edge."""
+        validate_level(level)
         with self.lock:
             edges = self.graphs[level]["edges"]
             edge_key = (from_ref, to_ref, rel)
@@ -957,7 +945,7 @@ class KnowledgeGraphStore:
             del edges[edge_key]
 
             # Remove version tracking
-            version_key = self._version_key_edge(from_ref, to_ref, rel)
+            version_key = version_key_edge(from_ref, to_ref, rel)
             if version_key in self._versions[level]:
                 del self._versions[level][version_key]
 
@@ -965,8 +953,9 @@ class KnowledgeGraphStore:
             logger.debug(f"Deleted edge '{from_ref}' -> '{to_ref}' ({rel}) from {level} graph")
             return {"deleted": True, "edge": {"from": from_ref, "to": to_ref, "rel": rel}}
 
-    def recall(self, level: str, node_id: str) -> dict:
+    def recall(self, level: str, node_id: str, session_id: str | None = None) -> dict:
         """Retrieve an archived node back into active context."""
+        validate_level(level)
         with self.lock:
             nodes = self.graphs[level]["nodes"]
 
@@ -975,7 +964,7 @@ class KnowledgeGraphStore:
 
             node = nodes[node_id]
 
-            if not self.is_archived(node):
+            if not is_archived(node):
                 raise NodeNotArchivedError(level, node_id)
 
             # Remove archived flag
@@ -986,7 +975,7 @@ class KnowledgeGraphStore:
                 del node["_orphaned_ts"]
 
             # Bump version (refreshes recency for scoring)
-            self._bump_version(level, self._version_key_node(node_id))
+            self._bump_version(level, version_key_node(node_id), session_id)
 
             self.dirty[level] = True
 
@@ -1016,7 +1005,7 @@ class KnowledgeGraphStore:
 app = Server("knowledge-graph")
 
 # Global store instance
-store: Optional[KnowledgeGraphStore] = None
+store: KnowledgeGraphStore | None = None
 
 
 @app.list_tools()
@@ -1118,7 +1107,8 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "level": {"type": "string", "enum": ["user", "project"], "description": "Graph level"},
-                    "id": {"type": "string", "description": "Node ID to recall"}
+                    "id": {"type": "string", "description": "Node ID to recall"},
+                    "session_id": {"type": "string", "description": "Optional: your session ID for tracking"}
                 },
                 "required": ["level", "id"]
             }
@@ -1197,7 +1187,8 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
         elif name == "kg_recall":
             result = store.recall(
                 arguments["level"],
-                arguments["id"]
+                arguments["id"],
+                arguments.get("session_id")
             )
             return [TextContent(type="text", text=json.dumps(result))]
 

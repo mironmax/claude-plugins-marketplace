@@ -12,7 +12,7 @@
       "name": "memory",
       "description": "Extract and remember patterns, insights, and relationships across sessions. Fast in-memory MCP server with git-style sync.",
       "source": "./memory-plugin",
-      "version": "0.4.1"
+      "version": "0.4.2"
     }
   ]
 }
