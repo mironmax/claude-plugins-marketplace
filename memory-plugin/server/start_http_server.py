@@ -54,7 +54,7 @@ def main():
 
     try:
         import uvicorn
-        from http.app import app
+        from mcp_http.app import app
 
         uvicorn.run(
             app,

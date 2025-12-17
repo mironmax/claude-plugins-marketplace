@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from dataclasses import dataclass
 
-from ..core import (
+from core import (
     TokenEstimator,
     NodeScorer,
     Compactor,

@@ -1,11 +1,17 @@
 {
   "name": "memory",
-  "version": "0.4.2",
-  "description": "Extract and remember patterns, insights, and relationships worth preserving across sessions. Fast in-memory MCP server with auto-compaction and real-time multi-session collaboration.",
+  "version": "0.5.0",
+  "description": "Extract and remember patterns, insights, and relationships worth preserving across sessions. Shared HTTP/SSE MCP server with auto-compaction and real-time multi-session collaboration.",
   "author": {
     "name": "Maxim",
     "url": "https://github.com/mironmax"
   },
   "license": "MIT",
-  "keywords": ["knowledge", "graph", "memory", "documentation", "mcp", "collaboration"]
+  "keywords": ["knowledge", "graph", "memory", "documentation", "mcp", "collaboration", "http", "sse"],
+  "mcpServers": {
+    "kg": {
+      "url": "http://127.0.0.1:8765/messages",
+      "transport": "sse"
+    }
+  }
 }

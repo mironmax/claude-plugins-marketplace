@@ -4,8 +4,8 @@ import logging
 import time
 import uuid
 from pathlib import Path
-from ..core.constants import SESSION_ID_LENGTH, SESSION_TTL_SECONDS
-from ..core.exceptions import SessionNotFoundError
+from core.constants import SESSION_ID_LENGTH, SESSION_TTL_SECONDS
+from core.exceptions import SessionNotFoundError
 
 logger = logging.getLogger(__name__)
 

@@ -13,9 +13,9 @@ from pydantic import BaseModel, Field
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from http.session_manager import HTTPSessionManager
-from http.store import MultiProjectGraphStore, GraphConfig
-from http.websocket import ConnectionManager
+from mcp_http.session_manager import HTTPSessionManager
+from mcp_http.store import MultiProjectGraphStore, GraphConfig
+from mcp_http.websocket import ConnectionManager
 from core.exceptions import KGError, NodeNotFoundError, SessionNotFoundError, NodeNotArchivedError
 
 # Configure logging

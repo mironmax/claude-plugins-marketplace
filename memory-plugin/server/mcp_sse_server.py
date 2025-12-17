@@ -14,15 +14,16 @@ from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from mcp.types import Tool, TextContent
 from starlette.applications import Starlette
-from starlette.routing import Route
-from starlette.responses import JSONResponse
+from starlette.routing import Route, Mount
+from starlette.responses import JSONResponse, Response
+from starlette.types import Scope, Receive, Send, ASGIApp
 
 # Add server directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from http.session_manager import HTTPSessionManager
-from http.store import MultiProjectGraphStore, GraphConfig
-from http.websocket import ConnectionManager
+from mcp_http.session_manager import HTTPSessionManager
+from mcp_http.store import MultiProjectGraphStore, GraphConfig
+from mcp_http.websocket import ConnectionManager
 from core.exceptions import (
     KGError,
     NodeNotFoundError,
@@ -422,12 +423,45 @@ async def main():
     # Create Starlette app with SSE transport
     sse = SseServerTransport("/messages")
 
-    app = Starlette(
-        routes=[
-            Route("/health", health_check),
-            *sse.get_routes()  # Add SSE routes
-        ]
-    )
+    # Create routes list - health check only, SSE handled at app level
+    routes = [Route("/health", health_check)]
+
+    # Create base Starlette app
+    base_app = Starlette(routes=routes)
+
+    # Wrapper ASGI app that routes SSE requests
+    class MCPApp:
+        async def __call__(self, scope: Scope, receive: Receive, send: Send):
+            path = scope.get("path", "")
+            method = scope.get("method", "")
+
+            if path == "/messages":
+                if method == "GET":
+                    # Handle SSE connection
+                    async with sse.connect_sse(scope, receive, send) as streams:
+                        await mcp_server.run(
+                            streams[0],  # read_stream
+                            streams[1],  # write_stream
+                            mcp_server.create_initialization_options()
+                        )
+                elif method == "POST":
+                    # Handle POST messages
+                    await sse.handle_post_message(scope, receive, send)
+                else:
+                    await send({
+                        "type": "http.response.start",
+                        "status": 405,
+                        "headers": [[b"content-type", b"text/plain"]],
+                    })
+                    await send({
+                        "type": "http.response.body",
+                        "body": b"Method Not Allowed",
+                    })
+            else:
+                # Pass to base Starlette app for other routes
+                await base_app(scope, receive, send)
+
+    app = MCPApp()
 
     port = int(os.getenv("KG_HTTP_PORT", "8765"))
     host = os.getenv("KG_HTTP_HOST", "127.0.0.1")
@@ -439,16 +473,15 @@ async def main():
     try:
         import uvicorn
 
-        # Run server with SSE transport
-        async with mcp_server.run(sse.handle_sse, mcp_server.create_initialization_options()):
-            config_uvi = uvicorn.Config(
-                app,
-                host=host,
-                port=port,
-                log_level=log_level.lower()
-            )
-            server_uvi = uvicorn.Server(config_uvi)
-            await server_uvi.serve()
+        # Run uvicorn server
+        config_uvi = uvicorn.Config(
+            app,
+            host=host,
+            port=port,
+            log_level=log_level.lower()
+        )
+        server_uvi = uvicorn.Server(config_uvi)
+        await server_uvi.serve()
 
     finally:
         if store:

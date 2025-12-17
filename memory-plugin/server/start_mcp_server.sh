@@ -26,8 +26,8 @@ check_server() {
 start_server() {
     echo "Starting MCP SSE Server on ${HOST}:${PORT}..." >&2
 
-    # Start server in background
-    nohup python3 "${SCRIPT_DIR}/mcp_sse_server.py" > "${LOGFILE}" 2>&1 &
+    # Start server in background using venv
+    nohup "${SCRIPT_DIR}/venv/bin/python" "${SCRIPT_DIR}/mcp_sse_server.py" > "${LOGFILE}" 2>&1 &
     SERVER_PID=$!
 
     # Save PID
