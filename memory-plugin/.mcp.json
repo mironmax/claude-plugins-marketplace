@@ -1,16 +1,8 @@
 {
   "mcpServers": {
     "kg": {
-      "command": "bash",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/server/start.sh"],
-      "env": {
-        "KG_USER_PATH": "${HOME}/.claude/knowledge/user.json",
-        "KG_PROJECT_PATH": ".knowledge/graph.json",
-        "KG_SAVE_INTERVAL": "30",
-        "KG_MAX_TOKENS": "5000",
-        "KG_ORPHAN_GRACE_DAYS": "7",
-        "KG_LOG_LEVEL": "INFO"
-      }
+      "url": "http://127.0.0.1:8765/messages",
+      "transport": "sse"
     }
   }
 }

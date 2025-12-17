@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
 
 # Add parent directory to path for imports
@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from http.session_manager import HTTPSessionManager
 from http.store import MultiProjectGraphStore, GraphConfig
+from http.websocket import ConnectionManager
 from core.exceptions import KGError, NodeNotFoundError, SessionNotFoundError, NodeNotArchivedError
 
 # Configure logging
@@ -83,12 +84,13 @@ class HealthResponse(BaseModel):
 
 store: MultiProjectGraphStore | None = None
 session_manager: HTTPSessionManager | None = None
+connection_manager: ConnectionManager | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifecycle."""
-    global store, session_manager
+    global store, session_manager, connection_manager
 
     # Startup
     logger.info("Starting Knowledge Graph HTTP Server...")
@@ -102,7 +104,19 @@ async def lifespan(app: FastAPI):
     )
 
     session_manager = HTTPSessionManager()
-    store = MultiProjectGraphStore(config, session_manager)
+    connection_manager = ConnectionManager()
+
+    # Create broadcast callback
+    async def broadcast_callback(project_path: str | None, message: dict, exclude_session: str | None):
+        """Broadcast changes to connected WebSocket clients."""
+        await connection_manager.broadcast_to_project(
+            project_path,
+            message,
+            exclude_session,
+            session_manager
+        )
+
+    store = MultiProjectGraphStore(config, session_manager, broadcast_callback)
 
     logger.info("Server ready")
 
@@ -313,6 +327,38 @@ async def sync_graph(session_id: str, start_ts: float):
     except Exception as e:
         logger.error(f"Error syncing graph: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket, session_id: str):
+    """
+    WebSocket endpoint for real-time graph updates.
+    Clients connect with: ws://localhost:8765/ws?session_id=xxx
+    """
+    if not connection_manager or not session_manager:
+        await websocket.close(code=1011, reason="Server not initialized")
+        return
+
+    # Verify session exists
+    if not session_manager.is_valid(session_id):
+        await websocket.close(code=1008, reason="Invalid session_id")
+        return
+
+    await connection_manager.connect(websocket, session_id)
+
+    try:
+        # Keep connection alive and receive messages (for heartbeat/ping)
+        while True:
+            data = await websocket.receive_text()
+            # Echo back for heartbeat
+            await websocket.send_json({"type": "pong", "message": data})
+
+    except WebSocketDisconnect:
+        connection_manager.disconnect(session_id)
+        logger.info(f"WebSocket disconnected: {session_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error for {session_id}: {e}")
+        connection_manager.disconnect(session_id)
 
 
 # ============================================================================

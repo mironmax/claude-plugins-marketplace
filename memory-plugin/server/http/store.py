@@ -46,9 +46,10 @@ class MultiProjectGraphStore:
     - graphs["project:/path/to/graph.json"] = project-specific graphs
     """
 
-    def __init__(self, config: GraphConfig, session_manager: HTTPSessionManager):
+    def __init__(self, config: GraphConfig, session_manager: HTTPSessionManager, broadcast_callback=None):
         self.config = config
         self.session_manager = session_manager
+        self.broadcast_callback = broadcast_callback
 
         # Initialize components
         self.estimator = TokenEstimator()
@@ -130,6 +131,32 @@ class MultiProjectGraphStore:
         self._versions[graph_key][key] = new_ver
         return new_ver
 
+    def _broadcast(self, message: dict, level: str, session_id: str | None = None):
+        """Broadcast a change notification. Can be called from any thread."""
+        if not self.broadcast_callback:
+            return
+
+        # Extract project_path if project-level
+        project_path = None
+        if level == "project" and session_id:
+            try:
+                project_path = self.session_manager.get_project_path(session_id)
+            except Exception:
+                pass
+
+        # Schedule broadcast (callback should be async-safe)
+        try:
+            import asyncio
+            # Try to get running loop, if exists schedule the broadcast
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.broadcast_callback(project_path, message, session_id))
+            except RuntimeError:
+                # No running loop, callback needs to handle this
+                pass
+        except Exception as e:
+            logger.error(f"Error broadcasting: {e}")
+
     # ========================================================================
     # Public API
     # ========================================================================
@@ -210,6 +237,13 @@ class MultiProjectGraphStore:
             # Run compaction if needed
             self._maybe_compact(graph_key)
 
+            # Broadcast change
+            self._broadcast(
+                {"type": "node_updated", "level": level, "node": node, "source_session": session_id},
+                level,
+                session_id
+            )
+
             logger.debug(f"Put node '{node_id}' in {level} graph")
             return {"node": node, "level": level}
 
@@ -247,6 +281,13 @@ class MultiProjectGraphStore:
 
             self.dirty[graph_key] = True
 
+            # Broadcast change
+            self._broadcast(
+                {"type": "edge_updated", "level": level, "edge": edge, "source_session": session_id},
+                level,
+                session_id
+            )
+
             logger.debug(f"Put edge {from_ref}->{to_ref}:{rel} in {level} graph")
             return {"edge": edge, "level": level}
 
@@ -280,6 +321,13 @@ class MultiProjectGraphStore:
 
             self.dirty[graph_key] = True
 
+            # Broadcast change
+            self._broadcast(
+                {"type": "node_deleted", "level": level, "node_id": node_id, "source_session": session_id},
+                level,
+                session_id
+            )
+
             logger.info(f"Deleted node '{node_id}' and {len(edges_to_delete)} edges from {level} graph")
             return {"deleted": node_id, "level": level, "edges_deleted": len(edges_to_delete)}
 
@@ -306,6 +354,14 @@ class MultiProjectGraphStore:
             if edge_key in edges:
                 del edges[edge_key]
                 self.dirty[graph_key] = True
+
+                # Broadcast change
+                self._broadcast(
+                    {"type": "edge_deleted", "level": level, "from": from_ref, "to": to_ref, "rel": rel, "source_session": session_id},
+                    level,
+                    session_id
+                )
+
                 logger.debug(f"Deleted edge {from_ref}->{to_ref}:{rel} from {level} graph")
                 return {"deleted": True, "level": level}
             else:
@@ -341,6 +397,13 @@ class MultiProjectGraphStore:
             self._bump_version(graph_key, ver_key, session_id)
 
             self.dirty[graph_key] = True
+
+            # Broadcast change
+            self._broadcast(
+                {"type": "node_recalled", "level": level, "node": node, "source_session": session_id},
+                level,
+                session_id
+            )
 
             logger.info(f"Recalled node '{node_id}' in {level} graph")
             return {"node": node, "level": level}
