@@ -10,8 +10,8 @@
   "keywords": ["knowledge", "graph", "memory", "documentation", "mcp", "collaboration", "http", "sse"],
   "mcpServers": {
     "kg": {
-      "url": "http://127.0.0.1:8765/messages",
-      "transport": "sse"
+      "type": "sse",
+      "url": "http://127.0.0.1:8765/messages"
     }
   }
 }
