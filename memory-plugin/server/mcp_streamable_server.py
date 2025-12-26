@@ -15,12 +15,15 @@ from mcp.server import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.types import Tool, TextContent
 from starlette.applications import Starlette
-from starlette.routing import Route
+from starlette.routing import Route, Mount
 from starlette.responses import JSONResponse
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
 
 # Add server directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
+from version import __version__
 from mcp_http.session_manager import HTTPSessionManager
 from mcp_http.store import MultiProjectGraphStore, GraphConfig
 from mcp_http.websocket import ConnectionManager
@@ -259,7 +262,7 @@ def create_mcp_server() -> Server:
             if name == "kg_ping":
                 return [TextContent(
                     type="text",
-                    text=f"OK - Server version 0.5.0, {session_manager.count() if session_manager else 0} active sessions"
+                    text=f"OK - Server version {__version__}, {session_manager.count() if session_manager else 0} active sessions"
                 )]
 
             elif name == "kg_register_session":
@@ -418,33 +421,60 @@ async def main():
         stateless=False,  # Maintain session state
     )
 
-    # Health check endpoint
-    async def health_check(request):
-        return JSONResponse({
+    # ========================================================================
+    # REST API for Visual Editor (FastAPI)
+    # ========================================================================
+
+    # TODO: Add authentication/authorization before production
+    # See MASTER_PLAN for security requirements
+
+    rest_api = FastAPI(title="Knowledge Graph REST API", version=__version__)
+
+    @rest_api.get("/api/health")
+    async def rest_health():
+        """REST API health check."""
+        return {
             "status": "ok",
-            "version": "0.5.0",
+            "version": __version__,
             "transport": "streamable-http",
             "active_sessions": session_manager.count(),
             "loaded_graphs": len(store.graphs)
-        })
+        }
+
+    @rest_api.get("/api/graph/read")
+    async def rest_read_graphs(session_id: str | None = None):
+        """Read all graphs."""
+        try:
+            return store.read_graphs(session_id)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @rest_api.post("/api/sessions/register")
+    async def rest_register_session(project_path: str | None = None):
+        """Register a new session."""
+        result = session_manager.register(project_path)
+        return result
 
     # Create Starlette app with custom ASGI routing
     async def app_asgi(scope, receive, send):
-        """ASGI app that routes between MCP and health endpoints."""
+        """ASGI app that routes between MCP, REST API, and health endpoints."""
         path = scope.get("path", "")
 
         if path == "/health":
-            # Handle health check
+            # MCP health check (simple)
             response = JSONResponse({
                 "status": "ok",
-                "version": "0.5.0",
+                "version": __version__,
                 "transport": "streamable-http",
                 "active_sessions": session_manager.count(),
                 "loaded_graphs": len(store.graphs)
             })
             await response(scope, receive, send)
+        elif path.startswith("/api/"):
+            # REST API endpoints (for visual editor)
+            await rest_api(scope, receive, send)
         elif path == "/":
-            # Handle MCP requests
+            # MCP Streamable HTTP requests
             await mcp_session_manager.handle_request(scope, receive, send)
         else:
             # 404 for other paths
