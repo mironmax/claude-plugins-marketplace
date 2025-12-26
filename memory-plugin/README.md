@@ -85,7 +85,64 @@ To skip permission prompts, add these permissions to your `~/.claude/settings.js
 
 ## Usage
 
-Once installed with CLAUDE.md template, the knowledge graph loads automatically.
+### Server Management
+
+The plugin uses a **shared MCP server** that runs in the background. The server starts automatically on first use, but you have full control over it.
+
+**Check server status:**
+```bash
+cd ~/.claude/plugins/memory/server
+./manage_server.sh status
+```
+
+**Manual control (if needed):**
+```bash
+# Start server
+./manage_server.sh start
+
+# Stop server
+./manage_server.sh stop
+
+# Restart server
+./manage_server.sh restart
+
+# View logs
+./manage_server.sh logs
+```
+
+**If server is not running:**
+- The plugin will show an error when you try to use memory tools
+- Simply run `./manage_server.sh start` from the server directory
+- Or restart Claude Code to auto-start the server
+
+**Server details:**
+- Endpoint: `http://127.0.0.1:8765/`
+- Health check: `http://127.0.0.1:8765/health`
+- Logs: `/tmp/mcp_server.log`
+- PID file: `~/.claude/plugins/memory/server/.mcp_server.pid`
+
+**Advanced: systemd service (optional)**
+
+For auto-start on boot and auto-restart on crashes (Linux only):
+
+```bash
+# Link service file
+mkdir -p ~/.config/systemd/user
+ln -s ~/.claude/plugins/memory/server/memory-mcp.service ~/.config/systemd/user/
+
+# Enable and start
+systemctl --user enable memory-mcp.service
+systemctl --user start memory-mcp.service
+
+# Check status
+systemctl --user status memory-mcp.service
+```
+
+Note: Using systemd service is optional. The default `manage_server.sh` approach gives you more direct control.
+
+### Working with Knowledge Graph
+
+Once the server is running:
 
 - Claude captures insights as you work
 - Knowledge persists across sessions

@@ -9,3 +9,5 @@ __pycache__/
 .vscode/
 .idea/
 .claude/
+dev/
+.mcp_server.pid
