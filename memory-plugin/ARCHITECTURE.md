@@ -12,104 +12,121 @@ Daily work with Claude Code revealed recurring patterns:
 
 **Need identified:** A self-improving, evolving knowledge structure that captures patterns, preferences, and insights automatically.
 
-### Iteration 1: Cipher + Embeddings + Graph DB (2024, Rejected)
+### Iteration 1: ByteRover Cipher (Rejected)
 
-**System:** ByteRover/Cipher engine with external dependencies
+**System:** ByteRover Cipher v0.3.0 - a fully-local, Docker-based AI agent framework with dual-memory architecture
 
-**Architecture:**
+**Actual Architecture:**
 ```
-Cipher Engine (librarian/retrieval LLM)
+Entry Layer (TypeScript)
   ↓
-Local Docker Containers:
-  - Qdrant (vector embeddings)
-  - Neo4j (graph database)
+MemAgent Core Orchestrator
   ↓
-External API Services:
-  - Embedding API (text → vectors)
-  - LLM API (semantic search)
+Dual-Memory System:
+├─ System 1 (Fast): Qdrant vector DB (3072-dim Gemini embeddings)
+└─ System 2 (Deep): Neo4j knowledge graph (relationship traversal)
+  ↓
+External Services (API calls only):
+├─ Gemini API (embeddings: gemini-embedding-001)
+└─ Groq/OpenAI API (LLM inference)
+  ↓
+Docker Containers (all local):
+├─ cipher-postgres (session storage)
+├─ cipher-qdrant (vector store)
+└─ cipher-neo4j (knowledge graph)
 ```
 
-**Why it failed:**
+**What it actually offered:**
+- Dual cognitive system (fast pattern matching + deep reasoning)
+- Multi-backend support (12+ vector stores, multiple graph DBs)
+- Full local deployment (only LLM/embedding API calls external)
+- MCP integration via SSE transport
+- 4 operating modes: MCP, API, CLI, UI
+
+**Why it was rejected:**
 
 1. **Cost & Latency**
-   - Required external embedding service (API costs)
-   - LLM "librarian" for every retrieval (extra API calls)
-   - Network latency on local containers
-   - Operational complexity (Docker management)
+   - External embedding API (Gemini) for every memory write
+   - LLM API calls for reasoning operations
+   - Docker container overhead for 4 services
+   - Operational complexity (service orchestration, health checks)
 
-2. **Embeddings Were Not Useful Enough**
-   - Captured semantic similarity, not critical facts
-   - Missed "always relevant" knowledge
-   - No guarantee important details surfaced
-   - Lost nuance in vector space compression
+2. **Embeddings Not Useful Enough**
+   - Semantic similarity captured patterns, not critical facts
+   - No guarantee "always relevant" knowledge surfaced
+   - Vector compression lost important nuances
+   - Required tuning threshold parameters
 
-3. **Graph Database Overhead**
-   - Complex Neo4j setup and queries
-   - Over-engineered for actual needs
-   - Graph structure didn't provide expected value
-   - Query complexity >> benefit
+3. **Over-Engineered for Use Case**
+   - Three databases (PostgreSQL + Qdrant + Neo4j) for single-user scenario
+   - Complex service topology (4 Docker containers + network)
+   - Graph queries provided marginal value over simpler approaches
+   - Maintenance burden >> benefits
 
-4. **Concurrent Access Issues**
-   - Container coordination complexity
-   - File/DB sync problems
+4. **Practical Issues**
+   - Docker resource usage (containers, volumes, networks)
+   - Container coordination and startup ordering
+   - Need for multiple API keys (Gemini + LLM provider)
 
-**Conclusion:** Complicated system with marginal results.
+**Conclusion:** Sophisticated architecture with production-grade features, but too complex for the actual need. The dual-memory cognitive model was elegant, but simpler approaches proved more effective.
 
 ---
 
-### Iteration 2: Claude Self-Developed MCP (Early 2024)
+### Iteration 2: MCP Memory Server with Advanced Retrieval
+
+**System:** TypeScript-based MCP server with inverted index and Steiner tree path-finding
+
+**Actual Architecture:**
+```
+Claude Code (multiple agents)
+  ↓
+Docker Container (stdio MCP server)
+  ↓
+KnowledgeGraphManager (in-memory + file-backed)
+├─ Inverted Index (token → entities mapping)
+├─ Steiner Tree Path-Finding (minimal connecting subgraph)
+└─ Scoring: TF × Importance × Recency
+  ↓
+./data/memory.jsonl (JSONL format, atomic writes)
+```
 
 **Key innovations:**
 
-1. **JSON as Knowledge Container** ✅  
-   - **Brilliant insight**: Use simple JSON files
-   - Local, no external dependencies  
+1. **File Format: JSONL** ✅
+   - Line-oriented JSON (one object per line)
+   - Atomic appends for concurrent safety
    - Human-readable and editable
-   - Version controllable (git)
-   - LLMs read JSON natively (no transformation)
+   - Efficient partial reads
 
-2. **User-Defined Memory Pattern** ✅
-   - CLAUDE.md instructions guide what to capture
-   - LLM decides relevance during conversation
-   - Flexible schema, evolves with needs
+2. **Concurrency Safety** ✅
+   - File locking via `proper-lockfile` (5 retries, exponential backoff)
+   - Lock-free reads (eventual consistency)
+   - Atomic writes (temp file + rename)
 
-**Problems:**
-- ❌ Concurrent access → file corruption (simultaneous writes)
-- ❌ Retrieval relevance gaps (missed important facts)
-- ❌ No automatic pruning/evolution
+3. **Advanced Retrieval** ✅
+   - Inverted index: O(t×log m) search complexity
+   - Per-token semantic matching ensures diversity
+   - Steiner Tree finds "surprising connections"
+   - Tunable thresholds (top-per-token, min score, max results)
 
----
+4. **Sophisticated Scoring** ✅
+   - TF (sublinear: 1 + log frequency)
+   - Importance (content + graph degree)
+   - Recency (exponential decay over 30 days)
 
-### Iteration 3: Advanced Retrieval Algorithms (Mid 2024)
+**Problems identified:**
 
-**Approach:** Solve retrieval problem with sophisticated search
+- ❌ **No archival system** → Grows indefinitely
+- ❌ **Hub monopolization** → High-centrality nodes dominate searches (rich-get-richer)
+- ❌ **Token matching limitations** → "docker-compose" ≠ "docker", no synonym support
+- ❌ **Single graph** → No separation of user-level vs project-level knowledge
+- ❌ **Complexity** → Inverted index + Steiner tree still didn't solve core issue
 
-**Implementation:**
-```
-Query Processing:
-1. Extract important terms from query
-2. TF-IDF search for "entry points" into graph
-3. Steiner tree algorithm (find optimal paths between entry points)
-4. Centrality avoidance (surface peripheral, non-central facts)
-```
-
-**Improvements:**
-- ✅ Much better relevance than embeddings
-- ✅ Found connections between concepts  
-- ✅ Avoided over-representing central nodes
-- ✅ Based on research papers (rigorous approach)
-
-**Still insufficient:**
-- ❌ Retrieval-time complexity didn't solve root cause
-- ❌ Important non-connected facts still missed
-- ❌ Over-reliance on graph structure
-- ❌ Added algorithmic complexity without proportional benefit
-
-**Key realization:** The problem isn't retrieval—it's **what** and **how** we store.
+**Key realization:** Even sophisticated retrieval algorithms (TF-IDF, Steiner trees, centrality avoidance) didn't solve the fundamental problem of surfacing truly important knowledge reliably.
 
 ---
 
-### Current Design: Compression-First Architecture (Late 2024 - Present)
+### Current Design: Compression-First Architecture
 
 **Paradigm shift:** Move complexity from **retrieval** to **entry** and **curation**.
 
