@@ -418,7 +418,7 @@ async def main():
         app=mcp_server,
         event_store=None,  # No resumability for now
         json_response=False,  # Use SSE responses (streaming)
-        stateless=False,  # Maintain session state
+        stateless=True,  # Allow stateless connections (Claude Code compatible)
     )
 
     # ========================================================================
