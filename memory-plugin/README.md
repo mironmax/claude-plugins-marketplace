@@ -121,6 +121,25 @@ cd ~/.claude/plugins/memory/server
 - Logs: `/tmp/mcp_server.log`
 - PID file: `~/.claude/plugins/memory/server/.mcp_server.pid`
 
+**Advanced: systemd service (optional)**
+
+For auto-start on boot and auto-restart on crashes (Linux only):
+
+```bash
+# Link service file
+mkdir -p ~/.config/systemd/user
+ln -s ~/.claude/plugins/memory/server/memory-mcp.service ~/.config/systemd/user/
+
+# Enable and start
+systemctl --user enable memory-mcp.service
+systemctl --user start memory-mcp.service
+
+# Check status
+systemctl --user status memory-mcp.service
+```
+
+Note: Using systemd service is optional. The default `manage_server.sh` approach gives you more direct control.
+
 ### Working with Knowledge Graph
 
 Once the server is running:
