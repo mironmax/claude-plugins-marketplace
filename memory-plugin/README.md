@@ -215,9 +215,15 @@ MIT License — see [LICENSE](LICENSE)
 
 ## Version
 
-0.4.2
+0.5.13
 
 ### Changelog
+
+**0.5.13**
+- Fixed MCP Streamable HTTP transport: changed json_response=False to json_response=True for Claude Code compatibility
+- Added orphaned edge cleanup on graph load
+- Added project_path parameter to read_graphs() REST API endpoint
+- Removed dead code: mcp_http/app.py (unused FastAPI app)
 
 **0.4.2**
 - Fixed backup tier promotion logic (oldest backups now properly promote to next tier)

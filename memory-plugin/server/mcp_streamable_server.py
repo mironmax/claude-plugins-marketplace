@@ -417,7 +417,7 @@ async def main():
     mcp_session_manager = StreamableHTTPSessionManager(
         app=mcp_server,
         event_store=None,  # No resumability for now
-        json_response=False,  # Use SSE responses (streaming)
+        json_response=True,  # Use JSON responses (Streamable HTTP standard)
         stateless=True,  # Allow stateless connections (Claude Code compatible)
     )
 
@@ -442,10 +442,10 @@ async def main():
         }
 
     @rest_api.get("/api/graph/read")
-    async def rest_read_graphs(session_id: str | None = None):
+    async def rest_read_graphs(session_id: str | None = None, project_path: str | None = None):
         """Read all graphs."""
         try:
-            return store.read_graphs(session_id)
+            return store.read_graphs(session_id=session_id, project_path=project_path)
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 

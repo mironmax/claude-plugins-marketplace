@@ -82,6 +82,9 @@ class MultiProjectGraphStore:
             persistence = GraphPersistence(self.config.user_path)
             graph, versions = persistence.load()
 
+            # Clean up orphaned edges (edges pointing to non-existent nodes)
+            self._clean_orphaned_edges(graph)
+
             self.graphs[user_key] = graph
             self._versions[user_key] = versions
             self._persistence[user_key] = persistence
@@ -99,6 +102,9 @@ class MultiProjectGraphStore:
         # Load from disk
         persistence = GraphPersistence(Path(project_path))
         graph, versions = persistence.load()
+
+        # Clean up orphaned edges (edges pointing to non-existent nodes)
+        self._clean_orphaned_edges(graph)
 
         self.graphs[project_key] = graph
         self._versions[project_key] = versions
@@ -161,9 +167,14 @@ class MultiProjectGraphStore:
     # Public API
     # ========================================================================
 
-    def read_graphs(self, session_id: str | None = None) -> dict:
+    def read_graphs(self, session_id: str | None = None, project_path: str | None = None) -> dict:
         """
-        Read all accessible graphs for a session.
+        Read all accessible graphs for a session or project.
+
+        Args:
+            session_id: Session ID (uses session's registered project path)
+            project_path: Direct project root path (alternative to session_id)
+
         Returns dict with "user" and "project" keys.
         """
         with self.lock:
@@ -175,20 +186,43 @@ class MultiProjectGraphStore:
                 "project": {"nodes": [], "edges": []}
             }
 
-            # Add project graph if session has one
+            # Determine graph path
+            graph_path = None
+
+            logger.info(f"read_graphs called with session_id={session_id}, project_path={project_path}")
+
             if session_id:
                 try:
-                    project_path = self.session_manager.get_project_path(session_id)
-                    if project_path:
-                        project_key = f"project:{project_path}"
-                        self._ensure_project_loaded(project_path)
-
-                        result["project"] = {
-                            "nodes": list(self.graphs[project_key]["nodes"].values()),
-                            "edges": list(self.graphs[project_key]["edges"].values()),
-                        }
+                    graph_path = self.session_manager.get_project_path(session_id)
                 except Exception as e:
-                    logger.warning(f"Could not load project graph for session {session_id}: {e}")
+                    logger.warning(f"Could not get project path for session {session_id}: {e}")
+
+            elif project_path:
+                # Direct project path provided (e.g., from visual editor)
+                # Convert project root to graph file path
+                project_root = Path(project_path)
+                graph_file = project_root / ".knowledge" / "graph.json"
+
+                logger.info(f"Loading project graph: {graph_file} (exists: {graph_file.exists()})")
+
+                if graph_file.exists():
+                    graph_path = str(graph_file)
+                    logger.info(f"Set graph_path to: {graph_path}")
+                else:
+                    logger.warning(f"Graph file not found: {graph_file}")
+
+            # Load project graph if we have a path
+            if graph_path:
+                try:
+                    project_key = f"project:{graph_path}"
+                    self._ensure_project_loaded(graph_path)
+
+                    result["project"] = {
+                        "nodes": list(self.graphs[project_key]["nodes"].values()),
+                        "edges": list(self.graphs[project_key]["edges"].values()),
+                    }
+                except Exception as e:
+                    logger.warning(f"Could not load project graph from {graph_path}: {e}")
 
             return result
 
@@ -470,6 +504,33 @@ class MultiProjectGraphStore:
 
         if archived:
             self.dirty[graph_key] = True
+
+    def _clean_orphaned_edges(self, graph: dict):
+        """
+        Remove edges pointing to non-existent nodes.
+        Called when loading graphs to clean up broken references.
+        Modifies graph in-place.
+        """
+        nodes = graph["nodes"]
+        edges = graph["edges"]
+        node_ids = set(nodes.keys())
+
+        # Find orphaned edges
+        orphaned_keys = []
+        for edge_key, edge in edges.items():
+            if edge["from"] not in node_ids or edge["to"] not in node_ids:
+                orphaned_keys.append(edge_key)
+                logger.warning(
+                    f"Removing orphaned edge: {edge['from']} -> {edge['to']} "
+                    f"(rel: {edge.get('rel', 'unknown')})"
+                )
+
+        # Remove orphaned edges
+        for key in orphaned_keys:
+            del edges[key]
+
+        if orphaned_keys:
+            logger.info(f"Cleaned {len(orphaned_keys)} orphaned edge(s)")
 
     def _prune_orphans(self, graph_key: str):
         """Prune orphaned archived nodes after grace period. Caller must hold lock."""
