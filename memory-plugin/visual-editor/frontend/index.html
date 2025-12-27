@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge Graph - Visual Editor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+    <!-- Mobile/Small Screen Warning -->
+    <div id="unsupported-screen" class="unsupported-message">
+        <div class="message-content">
+            <h1>📱 Desktop Required</h1>
+            <p>The Knowledge Graph Visual Editor requires a minimum screen width of 1366px.</p>
+            <p>Please access this page from a desktop or laptop computer.</p>
+            <p class="specs">Current width: <span id="current-width"></span>px</p>
+        </div>
+    </div>
+
+    <!-- Main Application -->
+    <div id="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <h1>📊 Knowledge Graph Visual Editor</h1>
+            <div class="header-controls">
+                <button id="refresh-btn" class="btn btn-primary">🔄 Refresh</button>
+                <div class="status-indicator">
+                    <span id="connection-status" class="status-dot status-checking"></span>
+                    <span id="connection-text">Checking...</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Graph Visualization Panel -->
+            <section class="graph-panel">
+                <div class="panel-header">
+                    <h2>Graph Visualization</h2>
+                    <div class="panel-controls">
+                        <button id="zoom-in-btn" class="btn btn-sm">➕</button>
+                        <button id="zoom-out-btn" class="btn btn-sm">➖</button>
+                        <button id="zoom-reset-btn" class="btn btn-sm">⟲</button>
+                        <select id="level-filter" class="filter-select">
+                            <option value="all">All Levels</option>
+                            <option value="user">User Level</option>
+                            <option value="project">Project Level</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="graph-container" class="graph-viewport">
+                    <svg id="graph-svg"></svg>
+                    <div id="graph-loading" class="loading-overlay">
+                        <div class="spinner"></div>
+                        <p>Loading knowledge graph...</p>
+                    </div>
+                    <div id="graph-error" class="error-overlay hidden">
+                        <div class="error-content">
+                            <h3>⚠️ Connection Error</h3>
+                            <p id="error-message"></p>
+                            <button id="retry-btn" class="btn btn-primary">Retry</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel-footer">
+                    <div class="legend">
+                        <div class="legend-item">
+                            <span class="legend-node node-active"></span>
+                            <span>Active Node</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-node node-archived"></span>
+                            <span>Archived Node</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-node node-orphan"></span>
+                            <span>Orphaned Node</span>
+                        </div>
+                    </div>
+                    <div class="stats">
+                        <span id="node-count">Nodes: 0</span>
+                        <span id="edge-count">Edges: 0</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Detail Panel (Bottom) -->
+            <section class="detail-panel">
+                <div class="panel-header">
+                    <h2>Node Details</h2>
+                </div>
+                <div id="detail-content" class="detail-content">
+                    <div class="empty-state">
+                        <p>👆 Click a node to view details</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/static/js/app.js" type="module"></script>
+</body>
+</html>
