@@ -12,9 +12,9 @@ Daily work with Claude Code revealed recurring patterns:
 
 **Need identified:** A self-improving, evolving knowledge structure that captures patterns, preferences, and insights automatically.
 
-### Iteration 1: ByteRover Cipher (Rejected)
+### Iteration 1: ByteRover Cipher
 
-**System:** ByteRover Cipher v0.3.0 - a fully-local, Docker-based AI agent framework with dual-memory architecture
+**System:** ByteRover Cipher - a fully-local, Docker-based AI agent framework with dual-memory architecture
 
 **Actual Architecture:**
 ```
@@ -52,10 +52,8 @@ Docker Containers (all local):
    - Operational complexity (service orchestration, health checks)
 
 2. **Embeddings Not Useful Enough**
-   - Semantic similarity captured patterns, not critical facts
+   - Semantic similarity not necessarily captured patterns, nor critical facts
    - No guarantee "always relevant" knowledge surfaced
-   - Vector compression lost important nuances
-   - Required tuning threshold parameters
 
 3. **Over-Engineered for Use Case**
    - Three databases (PostgreSQL + Qdrant + Neo4j) for single-user scenario
@@ -68,7 +66,7 @@ Docker Containers (all local):
    - Container coordination and startup ordering
    - Need for multiple API keys (Gemini + LLM provider)
 
-**Conclusion:** Sophisticated architecture with production-grade features, but too complex for the actual need. The dual-memory cognitive model was elegant, but simpler approaches proved more effective.
+**Conclusion:** Sophisticated architecture with production-grade features, but too complex for the actual need. The dual-memory cognitive model seemed elegant, but simpler approaches proved more effective.
 
 ---
 
@@ -135,7 +133,7 @@ KnowledgeGraphManager (in-memory + file-backed)
 1. **Compress on Entry, Not Retrieval**
    - **Insight**: LLM best at compression during creation, not search
    - Capture knowledge in distilled form immediately
-   - Store only what truly matters (human-curated by AI)
+   - Store only what truly matters (curated by AI)
    - No need for complex retrieval if storage is right
 
 2. **Automatic Pruning & Evolution**  

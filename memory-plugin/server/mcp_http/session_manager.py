@@ -25,13 +25,16 @@ class HTTPSessionManager:
         session_id = uuid.uuid4().hex[:SESSION_ID_LENGTH]
         ts = time.time()
 
+        # Resolve project_path to absolute to prevent cwd-dependent behavior
+        resolved_project_path = str(Path(project_path).resolve()) if project_path else None
+
         self._sessions[session_id] = {
             "start_ts": ts,
-            "project_path": project_path,
+            "project_path": resolved_project_path,
             "last_activity": ts,
         }
 
-        logger.info(f"Session registered: {session_id} (project: {project_path or 'none'})")
+        logger.info(f"Session registered: {session_id} (project: {resolved_project_path or 'none'})")
         return {"session_id": session_id, "start_ts": ts}
 
     def get_project_path(self, session_id: str) -> str | None:
