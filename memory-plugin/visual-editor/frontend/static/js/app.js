@@ -32,10 +32,11 @@ const CONFIG = {
 const state = {
     graphData: null,
     selectedNode: null,
-    levelFilter: 'all',
+    graphLevel: 'user',  // 'user' or 'project'
+    selectedProject: null,  // project_path when level='project'
+    projects: [],  // Available projects from /api/projects
     simulation: null,
     zoom: null,
-    sessionId: null,
 };
 
 // ============================================================================
@@ -74,9 +75,26 @@ function showError(message) {
 // API Functions
 // ============================================================================
 
+async function fetchProjects() {
+    try {
+        const response = await fetch(`${CONFIG.apiBaseUrl}/api/projects`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return await response.json();
+    } catch (error) {
+        console.error('Error fetching projects:', error);
+        return [];
+    }
+}
+
 async function fetchGraphData() {
     try {
-        const params = state.sessionId ? `?session_id=${state.sessionId}` : '';
+        let params = '';
+        if (state.graphLevel === 'project' && state.selectedProject) {
+            params = `?project_path=${encodeURIComponent(state.selectedProject)}`;
+        }
+
         const response = await fetch(`${CONFIG.apiBaseUrl}/api/graph${params}`);
 
         if (!response.ok) {
@@ -106,6 +124,41 @@ async function checkHealth() {
     } catch (error) {
         setConnectionStatus('error', 'Connection Failed');
         return false;
+    }
+}
+
+// ============================================================================
+// Project Management
+// ============================================================================
+
+async function loadProjects() {
+    try {
+        const projects = await fetchProjects();
+        state.projects = projects;
+
+        const selector = document.getElementById('project-selector');
+        selector.innerHTML = '<option value="">Select a project...</option>';
+
+        projects.forEach(project => {
+            const option = document.createElement('option');
+            option.value = project.project_path;
+
+            // Format: "DevProj/project-name (235N • 127E)"
+            let label = project.display_name;
+            if (project.has_graph && project.node_count !== null) {
+                label += ` (${project.node_count}N • ${project.edge_count}E)`;
+            } else {
+                label += ' (no graph)';
+            }
+
+            option.textContent = label;
+            option.title = project.project_path;  // Tooltip shows full path
+            selector.appendChild(option);
+        });
+
+        console.log(`Loaded ${projects.length} projects`);
+    } catch (error) {
+        console.error('Failed to load projects:', error);
     }
 }
 
@@ -206,10 +259,9 @@ function transformGraphData(rawData) {
     return { nodes, links };
 }
 
-function applyLevelFilter(data, filter) {
-    if (filter === 'all') {
-        return data;
-    }
+function applyLevelFilter(data, graphLevel) {
+    // With new design: user OR project (not both, not "all")
+    const filter = graphLevel === 'user' ? 'user' : 'project';
 
     const filteredNodes = data.nodes.filter(n => n.level === filter);
     const nodeIds = new Set(filteredNodes.map(n => n.id));
@@ -264,7 +316,7 @@ function renderGraph(graphData) {
     container.selectAll('*').remove();
 
     // Apply level filter
-    const filteredData = applyLevelFilter(graphData, state.levelFilter);
+    const filteredData = applyLevelFilter(graphData, state.graphLevel);
 
     // Update stats
     updateStats(filteredData.nodes.length, filteredData.links.length);
@@ -477,6 +529,9 @@ async function initialize() {
         return;
     }
 
+    // Load projects and populate dropdown
+    await loadProjects();
+
     // Load initial graph
     await loadGraph();
 
@@ -496,10 +551,32 @@ async function initialize() {
         state.svgElements?.svg.transition().call(state.zoom.transform, d3.zoomIdentity);
     });
 
-    document.getElementById('level-filter').addEventListener('change', (e) => {
-        state.levelFilter = e.target.value;
-        if (state.graphData) {
-            renderGraph(state.graphData);
+    // Level selector radio buttons
+    document.getElementById('level-user').addEventListener('change', (e) => {
+        if (e.target.checked) {
+            state.graphLevel = 'user';
+            document.getElementById('project-selector').disabled = true;
+            loadGraph();
+        }
+    });
+
+    document.getElementById('level-project').addEventListener('change', (e) => {
+        if (e.target.checked) {
+            state.graphLevel = 'project';
+            const selector = document.getElementById('project-selector');
+            selector.disabled = false;
+            if (selector.value) {
+                state.selectedProject = selector.value;
+                loadGraph();
+            }
+        }
+    });
+
+    // Project selector dropdown
+    document.getElementById('project-selector').addEventListener('change', (e) => {
+        state.selectedProject = e.target.value;
+        if (state.graphLevel === 'project' && state.selectedProject) {
+            loadGraph();
         }
     });
 

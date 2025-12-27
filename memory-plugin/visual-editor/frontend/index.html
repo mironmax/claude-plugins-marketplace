@@ -42,11 +42,21 @@
                         <button id="zoom-in-btn" class="btn btn-sm">➕</button>
                         <button id="zoom-out-btn" class="btn btn-sm">➖</button>
                         <button id="zoom-reset-btn" class="btn btn-sm">⟲</button>
-                        <select id="level-filter" class="filter-select">
-                            <option value="all">All Levels</option>
-                            <option value="user">User Level</option>
-                            <option value="project">Project Level</option>
-                        </select>
+
+                        <!-- Level Selector: User OR Project (not both) -->
+                        <div class="level-selector">
+                            <label class="radio-label">
+                                <input type="radio" name="graph-level" value="user" id="level-user" checked>
+                                <span>User Graph</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="graph-level" value="project" id="level-project">
+                                <span>Project:</span>
+                            </label>
+                            <select id="project-selector" class="filter-select" disabled>
+                                <option value="">Loading projects...</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
                 <div id="graph-container" class="graph-viewport">

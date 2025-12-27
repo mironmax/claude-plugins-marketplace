@@ -46,21 +46,60 @@ class ProjectMetadata:
     codebase_scraper: Optional[dict] = None
 
 
+def decode_claude_project_path_from_cwd(project_dir: Path) -> Path | None:
+    """
+    Get actual project path from .cwd field in session files.
+
+    This is more reliable than decoding the directory name since encoding
+    is ambiguous for paths containing hyphens.
+
+    Args:
+        project_dir: Path to ~/.claude/projects/<encoded-name>/
+
+    Returns:
+        Decoded project path or None if no sessions found
+    """
+    import json
+
+    # Find any .jsonl file (not agent-)
+    session_files = [f for f in project_dir.glob("*.jsonl")
+                     if not f.name.startswith("agent-")]
+
+    if not session_files:
+        return None
+
+    # Read first line of first session file to get .cwd
+    try:
+        with open(session_files[0], 'r') as f:
+            first_line = f.readline()
+            data = json.loads(first_line)
+            cwd = data.get('cwd')
+            if cwd:
+                return Path(cwd)
+    except Exception:
+        pass
+
+    return None
+
+
 def decode_claude_project_path(encoded: str) -> Path:
     """
-    Decode Claude Code's project directory naming.
+    Decode Claude Code's project directory naming (FALLBACK ONLY).
 
-    Claude Code encodes project paths by replacing / with -.
+    WARNING: This is ambiguous for paths containing hyphens!
+    Use decode_claude_project_path_from_cwd() when possible.
 
     Examples:
         "-home-maxim-DevProj-my-project" -> Path("/home/maxim/DevProj/my-project")
-        "simple-project" -> Path("simple-project")
+        But "-home-maxim-DevProj-claude-plugins-marketplace" could be either:
+          - "/home/maxim/DevProj/claude-plugins-marketplace" (correct)
+          - "/home/maxim/DevProj/claude/plugins/marketplace" (wrong)
 
     Args:
         encoded: Encoded directory name from ~/.claude/projects/
 
     Returns:
-        Decoded Path object
+        Decoded Path object (may be incorrect!)
     """
     if encoded.startswith("-"):
         # Absolute path: first - becomes /, rest become /
@@ -186,13 +225,20 @@ def discover_projects() -> list[dict]:
         if not project_dir.is_dir():
             continue
 
-        # Decode project path
-        project_path = decode_claude_project_path(project_dir.name)
+        # Decode project path from session files (reliable)
+        project_path = decode_claude_project_path_from_cwd(project_dir)
 
-        # Skip if project no longer exists on filesystem
-        if not project_path.exists():
-            logger.debug(f"Skipping deleted project: {project_path}")
-            continue
+        # Fallback: decode from directory name (ambiguous)
+        if project_path is None:
+            project_path = decode_claude_project_path(project_dir.name)
+            logger.warning(f"Using fallback path decoding for {project_dir.name} -> {project_path}")
+
+        # Check if project directory still exists
+        project_exists = project_path.exists()
+
+        if not project_exists:
+            logger.debug(f"Project directory deleted: {project_path}")
+            continue  # Skip deleted projects
 
         # Get conversation stats from .jsonl files
         jsonl_files = list(project_dir.glob("*.jsonl"))
