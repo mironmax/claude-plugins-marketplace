@@ -15,6 +15,7 @@ from core import (
     Graph,
     GRACE_PERIOD_DAYS,
     ORPHAN_GRACE_DAYS,
+    PROJECT_KNOWLEDGE_PATH,
     is_archived,
     version_key_node,
     version_key_edge,
@@ -92,15 +93,18 @@ class MultiProjectGraphStore:
 
             logger.info(f"Loaded user graph: {len(graph['nodes'])} nodes, {len(graph['edges'])} edges")
 
-    def _ensure_project_loaded(self, project_path: str):
-        """Load a project graph if not already loaded. Caller must hold lock."""
-        project_key = f"project:{project_path}"
+    def _ensure_project_loaded(self, graph_path: str):
+        """
+        Load a project graph if not already loaded. Caller must hold lock.
+        graph_path: Full path to graph.json file
+        """
+        project_key = f"project:{graph_path}"
 
         if project_key in self.graphs:
             return
 
         # Load from disk
-        persistence = GraphPersistence(Path(project_path))
+        persistence = GraphPersistence(Path(graph_path))
         graph, versions = persistence.load()
 
         # Clean up orphaned edges (edges pointing to non-existent nodes)
@@ -111,7 +115,7 @@ class MultiProjectGraphStore:
         self._persistence[project_key] = persistence
         self.dirty[project_key] = False
 
-        logger.info(f"Loaded project graph from {project_path}: {len(graph['nodes'])} nodes, {len(graph['edges'])} edges")
+        logger.info(f"Loaded project graph from {graph_path}: {len(graph['nodes'])} nodes, {len(graph['edges'])} edges")
 
     def _get_graph_key(self, level: str, session_id: str | None) -> str:
         """Get the graph storage key for a level and session."""
@@ -199,9 +203,9 @@ class MultiProjectGraphStore:
 
             elif project_path:
                 # Direct project path provided (e.g., from visual editor)
-                # Convert project root to graph file path
+                # Convert project root to graph file path using hardcoded standard location
                 project_root = Path(project_path)
-                graph_file = project_root / ".knowledge" / "graph.json"
+                graph_file = project_root / PROJECT_KNOWLEDGE_PATH
 
                 logger.info(f"Loading project graph: {graph_file} (exists: {graph_file.exists()})")
 

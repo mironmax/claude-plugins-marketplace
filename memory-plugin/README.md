@@ -34,7 +34,10 @@ cp ~/.claude/plugins/memory/templates/CLAUDE.md ~/.claude/CLAUDE.md
 
 # If you already have one, append the template content manually
 
-# 4. Restart Claude Code
+# 4. Install global command (optional but recommended)
+bash ~/.claude/plugins/memory/install_command.sh
+
+# 5. Restart Claude Code
 ```
 
 ### Enable Auto-Approval (Optional)
@@ -89,30 +92,27 @@ To skip permission prompts, add these permissions to your `~/.claude/settings.js
 
 The plugin uses a **shared MCP server** that runs in the background. The server starts automatically on first use, but you have full control over it.
 
-**Check server status:**
+**Global command (recommended):**
+
+After running `install_command.sh`, you can manage the server from anywhere:
+
+```bash
+kg-memory status    # Check if server is running
+kg-memory start     # Start server
+kg-memory stop      # Stop server
+kg-memory restart   # Restart server
+kg-memory logs      # View logs (tail -f)
+```
+
+**Direct script (alternative):**
 ```bash
 cd ~/.claude/plugins/memory/server
 ./manage_server.sh status
 ```
 
-**Manual control (if needed):**
-```bash
-# Start server
-./manage_server.sh start
-
-# Stop server
-./manage_server.sh stop
-
-# Restart server
-./manage_server.sh restart
-
-# View logs
-./manage_server.sh logs
-```
-
 **If server is not running:**
 - The plugin will show an error when you try to use memory tools
-- Simply run `./manage_server.sh start` from the server directory
+- Simply run `kg-memory start` (or `./manage_server.sh start` from the server directory)
 - Or restart Claude Code to auto-start the server
 
 **Server details:**
@@ -154,16 +154,23 @@ Edit `~/.claude/plugins/memory/.mcp.json` to customize:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `KG_USER_PATH` | `~/.claude/knowledge/user.json` | User-level graph location |
-| `KG_PROJECT_PATH` | `.knowledge/graph.json` | Project-level graph location |
 | `KG_SAVE_INTERVAL` | `30` | Auto-save interval (seconds) |
 | `KG_MAX_TOKENS` | `5000` | Token limit before compaction, per graph file |
 | `KG_ORPHAN_GRACE_DAYS` | `90` | Days before orphaned nodes deleted |
 
+**Note:** Paths are hardcoded and not configurable for consistency.
+
 ## Data Locations
 
 - **User level:** `~/.claude/knowledge/user.json` — Cross-project knowledge, never shared
-- **Project level:** `.knowledge/graph.json` — Codebase-specific, shareable via git
+- **Project level:** `<project>/.claude/knowledge/graph.json` — Codebase-specific
+
+### Git and Sharing
+
+Each project's `.claude/knowledge/` directory contains a `.gitignore` file that:
+- **By default**: Ignores `graph.json` (knowledge stays private)
+- **To share with team**: Comment out the `graph.json` line, review for sensitive data, then commit
+- **Backup files**: Always ignored (`.bak.*` files are for local recovery only)
 
 ## Backup and Recovery
 
@@ -192,7 +199,7 @@ If you need to restore from a backup:
 cp ~/.claude/knowledge/user.json.bak.1 ~/.claude/knowledge/user.json
 
 # For project-level graph:
-cp .knowledge/graph.json.bak.daily.3 .knowledge/graph.json
+cp .claude/knowledge/graph.json.bak.daily.3 .claude/knowledge/graph.json
 ```
 
 Choose the appropriate backup tier based on when the corruption occurred. The plugin will automatically reload on next session.
@@ -215,9 +222,15 @@ MIT License — see [LICENSE](LICENSE)
 
 ## Version
 
-0.5.13
+0.5.14
 
 ### Changelog
+
+**0.5.14**
+- Consolidated project graph path to `.claude/knowledge/graph.json` (hardcoded, mirrors user-level structure)
+- Added global `kg-memory` command for server management from anywhere (`install_command.sh`)
+- Auto-generated `.gitignore` for project knowledge folders (private by default, instructions for team sharing)
+- Removed legacy path support (`.knowledge/`, `.claude/graph.json`)
 
 **0.5.13**
 - Fixed MCP Streamable HTTP transport: changed json_response=False to json_response=True for Claude Code compatibility

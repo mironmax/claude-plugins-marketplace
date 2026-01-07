@@ -24,3 +24,8 @@ BACKUP_INTERVAL_SECONDS = 3600  # Minimum 1 hour between backups
 
 # Graph levels
 LEVELS = ("user", "project")
+
+# Hardcoded paths (not configurable)
+# User:    ~/.claude/knowledge/user.json
+# Project: <project>/.claude/knowledge/graph.json
+PROJECT_KNOWLEDGE_PATH = ".claude/knowledge/graph.json"
